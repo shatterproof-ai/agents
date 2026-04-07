@@ -1,0 +1,7 @@
+{
+  "name": "pnpm-repo",
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "shatter": "shatter scan ."
+  }
+}
