@@ -1,0 +1,7 @@
+version: '3'
+
+tasks:
+  shatter:
+    desc: Run Shatter broad analysis
+    cmds:
+      - shatter scan .

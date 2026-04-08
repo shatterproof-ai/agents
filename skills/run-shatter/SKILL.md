@@ -1,47 +1,77 @@
 ---
 name: run-shatter
-description: Run an installed Shatter binary against a file, function, or project and capture reproducible review artifacts for downstream analysis. Use when a downstream user wants to explore behavior, scan a project, or generate a spec before reviewing results.
+description: Run all integrated Shatter targets in a repository, continue past per-target failures, and capture reproducible review artifacts plus summaries for downstream analysis. Use when a downstream user wants broad project-native Shatter execution rather than an ad hoc one-off command.
 ---
 
 ## Purpose
 
 This skill is for downstream users of Shatter, not maintainers of the Shatter repo.
 
-Use it to choose the right Shatter command, run it, and save enough context for later review.
+Use it to discover project-native `shatter` wrappers, run each integrated target,
+and save enough context for later review.
 
 ## Defaults
 
-- Prefer `shatter` on `PATH`.
-- If `shatter` is not available, stop and report the missing binary instead of guessing.
+- By default, run every discovered supported-language target in the repository.
+- A target is `integrated` only when it defines a local wrapper command named
+  `shatter` on a supported command surface.
+- Targets without a local wrapper must be reported as `not integrated`, not
+  guessed or auto-fixed.
 - Create a dedicated run directory such as `shatter-review/<timestamp>/`.
-- Save the exact command, Shatter version, captured console output, and generated artifact paths.
+- Report each failure as soon as it happens, but continue with later integrated
+  targets unless the user interrupts you.
 
-## Command selection
+## Default workflow
 
-- Use `shatter explore <file>:<function>` for one function.
-- Use `shatter explore <file>` when the user wants all exported functions in one file.
-- Use `shatter scan <path>` for a directory or multi-file project pass.
-- Add `--spec-json --spec-out <path>` when later review needs precise machine-readable evidence.
-- Keep extra flags explicit in the saved command so the run is reproducible.
+Run the helper first:
+
+```bash
+python3 ../../scripts/run_targets.py --root <repo> --json
+```
+
+The helper should:
+
+- discover supported-language targets (`Cargo.toml`, `go.mod`, `package.json`)
+- mark each target as `integrated` or `not integrated`
+- run the target's native wrapper invocation for integrated targets
+- keep going after a failed target
+- write per-target artifacts and a final `summary.json`
+
+## Supported integration surfaces
+
+In v1, treat these local wrapper surfaces as integrated:
+
+- `package.json` with `scripts.shatter`
+- `Taskfile.yml` with a `shatter` task
+
+Use the native invocation for the surface:
+
+- package scripts: `npm run shatter`, `pnpm run shatter`, `yarn shatter`, or
+  `bun run shatter`, based on package manager hints
+- Taskfile: `task shatter` when available, otherwise `npx task shatter`
 
 ## Capture requirements
 
-For every run, preserve:
+For every integrated target run, preserve:
 
-- the exact command line
-- the working directory
-- `shatter --version`
+- the target root and detected language set
+- the integration status and chosen surface
+- the exact native invocation and working directory
 - stdout and stderr
-- any spec, report, or export files written by the command
+- per-target result metadata including exit status
+- the overall `summary.json`
 
-If the command produces both human-readable output and a JSON spec, keep both. The review skill can use the human-readable output for explanation and the JSON spec for precise evidence.
+If the target's wrapper produces spec JSON, reports, or other exports, keep
+those files alongside the captured console output.
 
 ## Handoff
 
-End with a short run summary that names:
+End with a short summary that includes:
 
-- the target that was explored
-- whether the run completed or failed
-- the files saved in the run directory
+- one line per target with `succeeded`, `failed`, or `not integrated`
+- immediate callouts for any failing targets
+- overall counts for integrated, succeeded, failed, and not-integrated targets
+- the run directory and key artifact paths
 
-Pass those artifact paths to `review-shatter-output` and `report-shatter-issues`.
+Pass the per-target artifacts for the interesting targets to
+`review-shatter-output` and `report-shatter-issues`.

@@ -1,0 +1,6 @@
+{
+  "name": "ts-app",
+  "scripts": {
+    "shatter": "shatter scan ."
+  }
+}
