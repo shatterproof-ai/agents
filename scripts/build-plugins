@@ -187,6 +187,59 @@ def write_skill(skill: Skill, target: str, out_dir: Path) -> None:
                 _copy_with_mode(src, out_dir / rel)
 
 
+def compute_plugin_hash(plugin_dir: Path) -> str:
+    h = hashlib.sha256()
+    files = sorted(p for p in plugin_dir.rglob("*") if p.is_file())
+    for f in files:
+        rel = f.relative_to(plugin_dir).as_posix().encode("utf-8")
+        h.update(rel + b"\0")
+        h.update(f.read_bytes())
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+def bump_version_if_changed(versions: dict, plugin: str, new_hash: str) -> str:
+    """If the plugin's content hash changed, bump patch (unless patch is 0,
+    which is the manual-bump anchor — see docs/conventions/versioning.md)."""
+    entry = versions.setdefault(plugin, {"version": "0.1.0", "content_hash": ""})
+    old_version = entry["version"]
+    if entry["content_hash"] == new_hash:
+        return old_version
+    major, minor, patch = (int(x) for x in old_version.split("."))
+    if patch == 0:
+        new_version = old_version
+    else:
+        new_version = f"{major}.{minor}.{patch + 1}"
+    entry["version"] = new_version
+    entry["content_hash"] = new_hash
+    return new_version
+
+
+def write_plugin_manifests(plugin: PluginSpec, version: str, out_root: Path) -> None:
+    claude_dir = out_root / "claude" / plugin.name / ".claude-plugin"
+    codex_dir  = out_root / "codex"  / plugin.name / ".codex-plugin"
+    claude_dir.mkdir(parents=True, exist_ok=True)
+    codex_dir.mkdir(parents=True, exist_ok=True)
+    claude_author = plugin.claude.get("author", "Shatterproof AI")
+    claude_manifest = {
+        "name": plugin.name,
+        "description": plugin.description,
+        "version": version,
+        "author": {"name": claude_author} if isinstance(claude_author, str) else claude_author,
+        "skills": "./skills/",
+    }
+    codex_manifest = {
+        "name": plugin.name,
+        "description": plugin.description,
+        "version": version,
+        "author": claude_manifest["author"],
+        "skills": "./skills/",
+        "interface": plugin.codex.get("interface", {}),
+    }
+    (claude_dir / "plugin.json").write_text(json.dumps(claude_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (codex_dir  / "plugin.json").write_text(json.dumps(codex_manifest,  indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build shatterproof plugins.")
     parser.add_argument(
