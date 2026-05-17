@@ -1,0 +1,32 @@
+{
+  "plugins": {
+    "shatter": {
+      "description": "Install, run, and review Shatter; draft markdown issue reports.",
+      "skills": ["install-shatter", "run-shatter", "report-shatter-issues"],
+      "claude": { "author": "Shatterproof AI" },
+      "codex": {
+        "interface": {
+          "displayName": "Shatter",
+          "category": "Developer Tools",
+          "capabilities": ["Interactive", "Write"],
+          "brandColor": "#2C6E49",
+          "shortDescription": "Run Shatter on a project and produce an analyst review."
+        }
+      }
+    },
+    "refute": {
+      "description": "Install Refute and diagnose its setup for symbol-aware refactoring.",
+      "skills": ["install-refute", "refute-doctor"],
+      "claude": { "author": "Shatterproof AI" },
+      "codex": {
+        "interface": {
+          "displayName": "Refute",
+          "category": "Developer Tools",
+          "capabilities": ["Interactive", "Write"],
+          "brandColor": "#2C6E49",
+          "shortDescription": "Install and diagnose Refute for CLI-driven refactors."
+        }
+      }
+    }
+  }
+}

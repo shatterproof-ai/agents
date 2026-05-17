@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="${1:-$PWD}"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+# Mirror catalog/ and the scripts into the work dir
+mkdir -p "$work"
+cp -a "$repo_root/catalog" "$work/catalog"
+cp -a "$repo_root/scripts" "$work/scripts"
+
+# Pre-populate plugin-versions.json from the repo so version bumps land identically
+# (build-plugins will mutate this in $work, but never the real one).
+python3 "$work/scripts/build-plugins" --output-root "$work" >/dev/null
+
+fail=0
+for top in plugins .claude-plugin; do
+  if ! diff -r "$repo_root/$top" "$work/$top" > "$work/diff.$top.txt" 2>&1; then
+    echo "drift detected in $top:" >&2
+    cat "$work/diff.$top.txt" >&2
+    fail=1
+  fi
+done
+
+# Versions file must also match
+if ! diff "$repo_root/catalog/plugin-versions.json" "$work/catalog/plugin-versions.json" > "$work/diff.versions.txt" 2>&1; then
+  echo "drift detected in catalog/plugin-versions.json:" >&2
+  cat "$work/diff.versions.txt" >&2
+  fail=1
+fi
+
+exit $fail

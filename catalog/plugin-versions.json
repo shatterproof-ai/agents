@@ -1,0 +1,10 @@
+{
+  "refute": {
+    "content_hash": "8a9cc34669b62b6d467b84e595621a0217d0e2e376f3839bcf4c1a30ed51d6b5",
+    "version": "0.1.0"
+  },
+  "shatter": {
+    "content_hash": "558ff56f4d1cf61191ab23f84c9853f087fd533a5cbd3c4df8da037c8b84ef1b",
+    "version": "0.1.0"
+  }
+}

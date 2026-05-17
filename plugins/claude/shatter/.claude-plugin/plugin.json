@@ -1,0 +1,9 @@
+{
+  "author": {
+    "name": "Shatterproof AI"
+  },
+  "description": "Install, run, and review Shatter; draft markdown issue reports.",
+  "name": "shatter",
+  "skills": "./skills/",
+  "version": "0.1.0"
+}

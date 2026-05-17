@@ -1,0 +1,19 @@
+{
+  "author": {
+    "name": "Shatterproof AI"
+  },
+  "description": "Install, run, and review Shatter; draft markdown issue reports.",
+  "interface": {
+    "brandColor": "#2C6E49",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "category": "Developer Tools",
+    "displayName": "Shatter",
+    "shortDescription": "Run Shatter on a project and produce an analyst review."
+  },
+  "name": "shatter",
+  "skills": "./skills/",
+  "version": "0.1.0"
+}
