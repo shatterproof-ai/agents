@@ -10,7 +10,10 @@ import unittest
 from pathlib import Path
 
 
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run_targets.py"
+SCRIPT_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "catalog" / "skills" / "run-shatter" / "scripts" / "run_targets.py"
+)
 SPEC = importlib.util.spec_from_file_location("run_targets", SCRIPT_PATH)
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
