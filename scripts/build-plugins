@@ -82,11 +82,15 @@ def parse_frontmatter(text: str, source: str) -> tuple[dict[str, str], str]:
     return fm, body
 
 
+def _is_ignored(p: Path) -> bool:
+    return any(part == "__pycache__" for part in p.parts) or p.suffix == ".pyc"
+
+
 def _collect_companion_files(skill_dir: Path, sub: str) -> list[Path]:
     d = skill_dir / sub
     if not d.is_dir():
         return []
-    return sorted(p for p in d.rglob("*") if p.is_file())
+    return sorted(p for p in d.rglob("*") if p.is_file() and not _is_ignored(p))
 
 
 def load_skill(skill_dir: Path) -> Skill:
@@ -182,7 +186,7 @@ def write_skill(skill: Skill, target: str, out_dir: Path) -> None:
         if not src_root.is_dir():
             continue
         for src in src_root.rglob("*"):
-            if src.is_file():
+            if src.is_file() and not _is_ignored(src):
                 rel = src.relative_to(skill.source_dir)
                 _copy_with_mode(src, out_dir / rel)
 
