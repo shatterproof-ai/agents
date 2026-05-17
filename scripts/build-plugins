@@ -27,6 +27,128 @@ class BuildError(Exception):
     """Raised when validation or build fails."""
 
 
+from dataclasses import dataclass, field
+
+ALLOWED_FRONTMATTER_KEYS = frozenset({"name", "description"})
+
+
+@dataclass
+class Skill:
+    name: str
+    source_dir: Path
+    frontmatter: dict[str, str]
+    body: str
+    metadata: dict
+    overlays: dict[str, str] = field(default_factory=dict)   # {"claude": "...", "codex": "..."}
+    references: list[Path] = field(default_factory=list)
+    scripts: list[Path] = field(default_factory=list)
+
+
+@dataclass
+class PluginSpec:
+    name: str
+    description: str
+    skills: list[str]
+    claude: dict
+    codex: dict
+
+
+@dataclass
+class Catalog:
+    plugins: dict[str, PluginSpec]
+    skills: dict[str, Skill]
+    versions: dict[str, dict]
+
+
+def parse_frontmatter(text: str, source: str) -> tuple[dict[str, str], str]:
+    m = FRONTMATTER_RE.match(text)
+    if not m:
+        raise BuildError(f"{source}: missing or malformed frontmatter")
+    raw, body = m.group(1), m.group(2)
+    fm: dict[str, str] = {}
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        if ":" not in line:
+            raise BuildError(f"{source}: malformed frontmatter line: {line!r}")
+        key, _, value = line.partition(":")
+        fm[key.strip()] = value.strip()
+    for required in ("name", "description"):
+        if required not in fm:
+            raise BuildError(f"{source}: frontmatter missing required key {required!r}")
+    extra = set(fm) - ALLOWED_FRONTMATTER_KEYS
+    if extra:
+        raise BuildError(f"{source}: extra frontmatter key(s) {sorted(extra)} not allowed")
+    return fm, body
+
+
+def _collect_companion_files(skill_dir: Path, sub: str) -> list[Path]:
+    d = skill_dir / sub
+    if not d.is_dir():
+        return []
+    return sorted(p for p in d.rglob("*") if p.is_file())
+
+
+def load_skill(skill_dir: Path) -> Skill:
+    name = skill_dir.name
+    skill_md = skill_dir / "SKILL.md"
+    if not skill_md.is_file():
+        raise BuildError(f"{skill_dir}: missing SKILL.md")
+    fm, body = parse_frontmatter(skill_md.read_text(encoding="utf-8"), str(skill_md))
+    if fm["name"] != name:
+        raise BuildError(
+            f"{skill_md}: frontmatter name {fm['name']!r} does not match directory {name!r}"
+        )
+    metadata_path = skill_dir / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.is_file() else {}
+    overlays: dict[str, str] = {}
+    for overlay_name, key in (("CLAUDE.md", "claude"), ("CODEX.md", "codex")):
+        op = skill_dir / overlay_name
+        if op.is_file():
+            text = op.read_text(encoding="utf-8")
+            if text.startswith("---"):
+                raise BuildError(f"{op}: overlays must not contain frontmatter")
+            if not text.lstrip().startswith("## "):
+                raise BuildError(f"{op}: overlays must start with a level-2 heading")
+            overlays[key] = text
+    return Skill(
+        name=name,
+        source_dir=skill_dir,
+        frontmatter=fm,
+        body=body,
+        metadata=metadata,
+        overlays=overlays,
+        references=_collect_companion_files(skill_dir, "references"),
+        scripts=_collect_companion_files(skill_dir, "scripts"),
+    )
+
+
+def load_catalog(catalog_dir: Path) -> Catalog:
+    plugins_data = json.loads((catalog_dir / "plugins.json").read_text(encoding="utf-8"))
+    versions = json.loads((catalog_dir / "plugin-versions.json").read_text(encoding="utf-8"))
+    plugins: dict[str, PluginSpec] = {}
+    skills: dict[str, Skill] = {}
+    for name, p in plugins_data["plugins"].items():
+        plugins[name] = PluginSpec(
+            name=name,
+            description=p["description"],
+            skills=list(p["skills"]),
+            claude=dict(p.get("claude", {})),
+            codex=dict(p.get("codex", {})),
+        )
+        for skill_name in p["skills"]:
+            if skill_name in skills:
+                continue
+            skill_dir = catalog_dir / "skills" / skill_name
+            skills[skill_name] = load_skill(skill_dir)
+    # Cross-check: every plugin's skills exist on disk
+    for plugin in plugins.values():
+        for s in plugin.skills:
+            if s not in skills:
+                raise BuildError(f"plugin {plugin.name}: skill {s!r} not found in catalog/skills/")
+    return Catalog(plugins=plugins, skills=skills, versions=versions)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build shatterproof plugins.")
     parser.add_argument(
