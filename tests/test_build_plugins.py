@@ -71,3 +71,42 @@ def test_parse_frontmatter_rejects_extra_keys():
     bad = "---\nname: x\ndescription: y\nrecommended_model: low\n---\n\nbody\n"
     with pytest.raises(build.BuildError, match="extra frontmatter key"):
         build.parse_frontmatter(bad, source="x/SKILL.md")
+
+
+def test_compose_skill_appends_overlay(tmp_path):
+    build = _load_build_module()
+    catalog = _make_catalog(tmp_path)
+    (catalog / "skills" / "hello" / "CLAUDE.md").write_text(
+        "## Claude-only\nspecific\n", encoding="utf-8"
+    )
+    cat = build.load_catalog(catalog)
+    composed = build.compose_skill(cat.skills["hello"], "claude")
+    assert composed.startswith("---\nname: hello\ndescription: Greet the world.\n---\n")
+    assert "## Claude-only\nspecific" in composed
+    assert composed.index("Hi.") < composed.index("## Claude-only")
+
+
+def test_compose_skill_no_overlay_returns_base(tmp_path):
+    build = _load_build_module()
+    catalog = _make_catalog(tmp_path)
+    cat = build.load_catalog(catalog)
+    composed = build.compose_skill(cat.skills["hello"], "codex")
+    assert composed.endswith("Hi.\n") or composed.endswith("Hi.")
+    assert "## " not in composed.split("---\n", 2)[-1].split("\n", 1)[0]
+
+
+def test_write_skill_copies_companions(tmp_path):
+    build = _load_build_module()
+    catalog = _make_catalog(tmp_path)
+    (catalog / "skills" / "hello" / "scripts").mkdir()
+    helper = catalog / "skills" / "hello" / "scripts" / "say.sh"
+    helper.write_text("#!/usr/bin/env bash\necho hi\n", encoding="utf-8")
+    helper.chmod(0o755)
+    cat = build.load_catalog(catalog)
+    out = tmp_path / "out"
+    build.write_skill(cat.skills["hello"], "claude", out / "skills" / "hello")
+    assert (out / "skills" / "hello" / "SKILL.md").is_file()
+    assert (out / "skills" / "hello" / "metadata.json").is_file()
+    copied = out / "skills" / "hello" / "scripts" / "say.sh"
+    assert copied.is_file()
+    assert copied.stat().st_mode & 0o111  # exec bits preserved

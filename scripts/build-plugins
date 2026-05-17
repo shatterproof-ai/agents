@@ -149,6 +149,44 @@ def load_catalog(catalog_dir: Path) -> Catalog:
     return Catalog(plugins=plugins, skills=skills, versions=versions)
 
 
+def compose_skill(skill: Skill, target: str) -> str:
+    fm_lines = [f"{k}: {v}" for k, v in skill.frontmatter.items()]
+    parts = ["---"]
+    parts.extend(fm_lines)
+    parts.append("---")
+    parts.append(skill.body.rstrip("\n"))
+    overlay = skill.overlays.get(target)
+    if overlay:
+        parts.append("\n---\n")
+        parts.append(overlay.rstrip("\n"))
+    return "\n".join(parts) + "\n"
+
+
+def _copy_with_mode(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, dst)
+    src_mode = src.stat().st_mode
+    if src_mode & stat.S_IXUSR:
+        dst.chmod(dst.stat().st_mode | 0o111)
+
+
+def write_skill(skill: Skill, target: str, out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "SKILL.md").write_text(compose_skill(skill, target), encoding="utf-8")
+    (out_dir / "metadata.json").write_text(
+        json.dumps(skill.metadata, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    for sub in ("references", "scripts"):
+        src_root = skill.source_dir / sub
+        if not src_root.is_dir():
+            continue
+        for src in src_root.rglob("*"):
+            if src.is_file():
+                rel = src.relative_to(skill.source_dir)
+                _copy_with_mode(src, out_dir / rel)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build shatterproof plugins.")
     parser.add_argument(
