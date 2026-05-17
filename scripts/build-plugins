@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Build shatterproof marketplace plugins from catalog sources."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import shutil
+import stat
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CATALOG_DIR = REPO_ROOT / "catalog"
+SKILLS_DIR = CATALOG_DIR / "skills"
+PLUGINS_DIR = REPO_ROOT / "plugins"
+PLUGINS_JSON = CATALOG_DIR / "plugins.json"
+VERSIONS_JSON = CATALOG_DIR / "plugin-versions.json"
+MARKETPLACE_JSON = REPO_ROOT / ".claude-plugin" / "marketplace.json"
+TARGETS = ("claude", "codex")
+FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
+
+
+class BuildError(Exception):
+    """Raised when validation or build fails."""
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Build shatterproof plugins.")
+    parser.add_argument(
+        "--output-root",
+        type=Path,
+        default=REPO_ROOT,
+        help="Repository root to build into (default: this repo). Used by check-plugins-clean.",
+    )
+    parser.add_argument(
+        "--check-only",
+        action="store_true",
+        help="Validate sources and report what would change; do not write.",
+    )
+    args = parser.parse_args(argv)
+    # Subsequent tasks fill this in.
+    print("build-plugins: skeleton ok", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
