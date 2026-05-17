@@ -16,7 +16,7 @@
     },
     "refute": {
       "description": "Install Refute and diagnose its setup for symbol-aware refactoring.",
-      "skills": ["install-refute", "refute-doctor"],
+      "skills": ["install-refute", "refute-doctor", "pin-refute"],
       "claude": { "author": "Shatterproof AI" },
       "codex": {
         "interface": {
