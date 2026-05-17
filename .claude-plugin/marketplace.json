@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "description": "Plugins for Shatter and Refute."
+  },
+  "name": "shatterproof",
+  "owner": {
+    "name": "Shatterproof AI"
+  },
+  "plugins": [
+    {
+      "author": "Shatterproof AI",
+      "description": "Install, run, and review Shatter; draft markdown issue reports.",
+      "name": "shatter",
+      "source": "./plugins/claude/shatter",
+      "version": "0.1.0"
+    },
+    {
+      "author": "Shatterproof AI",
+      "description": "Install Refute and diagnose its setup for symbol-aware refactoring.",
+      "name": "refute",
+      "source": "./plugins/claude/refute",
+      "version": "0.1.0"
+    }
+  ]
+}
