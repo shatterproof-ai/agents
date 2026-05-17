@@ -240,22 +240,61 @@ def write_plugin_manifests(plugin: PluginSpec, version: str, out_root: Path) -> 
     (codex_dir  / "plugin.json").write_text(json.dumps(codex_manifest,  indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def write_marketplace_manifest(catalog: Catalog, out_root: Path) -> None:
+    plugins_list = []
+    for name in catalog.plugins:
+        plugins_list.append({
+            "name": name,
+            "description": catalog.plugins[name].description,
+            "version": catalog.versions[name]["version"],
+            "source": f"./plugins/claude/{name}",
+            "author": catalog.plugins[name].claude.get("author", "Shatterproof AI"),
+        })
+    payload = {
+        "name": "shatterproof",
+        "owner": {"name": "Shatterproof AI"},
+        "metadata": {"description": "Plugins for Shatter and Refute."},
+        "plugins": plugins_list,
+    }
+    out = out_root / ".claude-plugin" / "marketplace.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def build_all(output_root: Path) -> None:
+    catalog = load_catalog(output_root / "catalog")
+    plugins_dir = output_root / "plugins"
+    for target in TARGETS:
+        target_dir = plugins_dir / target
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+    for plugin in catalog.plugins.values():
+        for target in TARGETS:
+            plugin_out = plugins_dir / target / plugin.name
+            (plugin_out / "skills").mkdir(parents=True, exist_ok=True)
+            for skill_name in plugin.skills:
+                write_skill(catalog.skills[skill_name], target, plugin_out / "skills" / skill_name)
+        # hash after writing skills (manifests are written below with the new version)
+        claude_dir = plugins_dir / "claude" / plugin.name
+        new_hash = compute_plugin_hash(claude_dir)
+        version = bump_version_if_changed(catalog.versions, plugin.name, new_hash)
+        write_plugin_manifests(plugin, version, plugins_dir)
+    (output_root / "catalog" / "plugin-versions.json").write_text(
+        json.dumps(catalog.versions, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    write_marketplace_manifest(catalog, output_root)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build shatterproof plugins.")
-    parser.add_argument(
-        "--output-root",
-        type=Path,
-        default=REPO_ROOT,
-        help="Repository root to build into (default: this repo). Used by check-plugins-clean.",
-    )
-    parser.add_argument(
-        "--check-only",
-        action="store_true",
-        help="Validate sources and report what would change; do not write.",
-    )
+    parser.add_argument("--output-root", type=Path, default=REPO_ROOT)
     args = parser.parse_args(argv)
-    # Subsequent tasks fill this in.
-    print("build-plugins: skeleton ok", file=sys.stderr)
+    try:
+        build_all(args.output_root.resolve())
+    except BuildError as e:
+        print(f"build-plugins: {e}", file=sys.stderr)
+        return 1
+    print("build-plugins: ok", file=sys.stderr)
     return 0
 
 

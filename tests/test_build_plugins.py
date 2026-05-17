@@ -19,11 +19,6 @@ def _load_build_module():
     return mod
 
 
-def test_main_returns_zero():
-    build = _load_build_module()
-    assert build.main([]) == 0
-
-
 import json
 import pytest
 
@@ -181,3 +176,36 @@ def test_write_plugin_manifests_writes_claude_and_codex(tmp_path):
     assert claude["author"] == {"name": "X"}
     assert codex["version"] == "9.9.9"
     assert codex["interface"]["displayName"] == "Greetings"
+
+
+def test_build_all_end_to_end(tmp_path):
+    build = _load_build_module()
+    catalog = _make_catalog(tmp_path)
+    out = tmp_path / "repo"
+    out.mkdir()
+    (out / "catalog").symlink_to(catalog)
+    build.build_all(out)
+    assert (out / "plugins" / "claude" / "greetings" / "skills" / "hello" / "SKILL.md").is_file()
+    assert (out / "plugins" / "codex"  / "greetings" / "skills" / "hello" / "SKILL.md").is_file()
+    mp = json.loads((out / ".claude-plugin" / "marketplace.json").read_text())
+    assert mp["plugins"][0]["name"] == "greetings"
+    assert mp["plugins"][0]["source"] == "./plugins/claude/greetings"
+    versions = json.loads((catalog / "plugin-versions.json").read_text())
+    assert versions["greetings"]["version"] == "0.1.0"   # patch=0 anchor; first build records hash, no bump
+    assert versions["greetings"]["content_hash"] != ""
+
+
+def test_build_all_is_idempotent(tmp_path):
+    build = _load_build_module()
+    catalog = _make_catalog(tmp_path)
+    out = tmp_path / "repo"
+    out.mkdir()
+    (out / "catalog").symlink_to(catalog)
+    build.build_all(out)
+    snap1 = sorted(p.relative_to(out).as_posix() for p in (out / "plugins").rglob("*") if p.is_file())
+    hash1 = json.loads((catalog / "plugin-versions.json").read_text())["greetings"]["content_hash"]
+    build.build_all(out)
+    snap2 = sorted(p.relative_to(out).as_posix() for p in (out / "plugins").rglob("*") if p.is_file())
+    hash2 = json.loads((catalog / "plugin-versions.json").read_text())["greetings"]["content_hash"]
+    assert snap1 == snap2
+    assert hash1 == hash2
