@@ -2,7 +2,7 @@
   "plugins": {
     "shatter": {
       "description": "Install, run, and review Shatter; draft markdown issue reports.",
-      "skills": ["install-shatter", "run-shatter", "report-shatter-issues", "add-shatter-target"],
+      "skills": ["install-shatter", "run-shatter", "report-shatter-issues", "add-shatter-target", "interpret-shatter-spec"],
       "claude": { "author": "Shatterproof AI" },
       "codex": {
         "interface": {
