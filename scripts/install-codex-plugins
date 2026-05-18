@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+"""Install generated shatterproof Codex plugins into a local marketplace."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import shlex
+import subprocess
+from pathlib import Path
+
+
+MARKETPLACE_NAME = "shatterproof"
+MARKETPLACE_DISPLAY_NAME = "Shatterproof"
+DEFAULT_INSTALLATION_POLICY = "INSTALLED_BY_DEFAULT"
+DEFAULT_AUTHENTICATION_POLICY = "ON_INSTALL"
+INSTALLATION_POLICIES = ("AVAILABLE", "INSTALLED_BY_DEFAULT", "NOT_AVAILABLE")
+AUTHENTICATION_POLICIES = ("ON_INSTALL", "ON_USE")
+IGNORED_COPY_NAMES = ("__pycache__", ".DS_Store", ".pytest_cache")
+
+
+def repository_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def default_codex_home() -> Path:
+    configured_home = os.environ.get("CODEX_HOME")
+    if configured_home:
+        return Path(configured_home).expanduser()
+    return Path.home() / ".codex"
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Install generated shatterproof Codex plugins into a local marketplace."
+    )
+    parser.add_argument(
+        "plugins",
+        nargs="*",
+        help="Plugin names to install (default: every directory under plugins/codex).",
+    )
+    parser.add_argument(
+        "--source",
+        type=Path,
+        default=repository_root(),
+        help="shatter-agents checkout to install from (default: this repository).",
+    )
+    parser.add_argument(
+        "--codex-home",
+        type=Path,
+        default=default_codex_home(),
+        help="Codex home directory to register against (default: $CODEX_HOME or ~/.codex).",
+    )
+    parser.add_argument(
+        "--marketplace-root",
+        type=Path,
+        help="Local marketplace root to write (default: <codex-home>/marketplaces/shatterproof).",
+    )
+    parser.add_argument(
+        "--codex",
+        default=os.environ.get("CODEX", "codex"),
+        help="Codex executable to use for marketplace registration (default: codex).",
+    )
+    parser.add_argument(
+        "--install-policy",
+        choices=INSTALLATION_POLICIES,
+        default=DEFAULT_INSTALLATION_POLICY,
+        help="Codex marketplace installation policy for each plugin.",
+    )
+    parser.add_argument(
+        "--authentication-policy",
+        choices=AUTHENTICATION_POLICIES,
+        default=DEFAULT_AUTHENTICATION_POLICY,
+        help="Codex marketplace authentication policy for each plugin.",
+    )
+    parser.add_argument(
+        "--skip-register",
+        action="store_true",
+        help="Write the local marketplace without running codex plugin marketplace add.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the planned installation without writing files or registering with Codex.",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Print each major step.")
+    return parser.parse_args()
+
+
+def resolved(path: Path) -> Path:
+    return path.expanduser().resolve()
+
+
+def marketplace_root_for(args: argparse.Namespace, codex_home: Path) -> Path:
+    if args.marketplace_root is not None:
+        return resolved(args.marketplace_root)
+    return codex_home / "marketplaces" / MARKETPLACE_NAME
+
+
+def generated_codex_root(source: Path) -> Path:
+    return source / "plugins" / "codex"
+
+
+def discover_plugins(source: Path, requested: list[str]) -> list[str]:
+    codex_root = generated_codex_root(source)
+    if not codex_root.is_dir():
+        raise SystemExit(f"Missing generated Codex plugin directory: {codex_root}")
+    if requested:
+        names = requested
+    else:
+        names = sorted(path.name for path in codex_root.iterdir() if path.is_dir())
+    if not names:
+        raise SystemExit(f"No generated Codex plugins found under {codex_root}")
+    return names
+
+
+def read_json(path: Path) -> dict:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"{path} is not valid JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit(f"{path} must contain a JSON object")
+    return payload
+
+
+def validate_plugin_source(source: Path, plugin_name: str) -> dict:
+    plugin_root = generated_codex_root(source) / plugin_name
+    if not plugin_root.is_dir():
+        raise SystemExit(f"Generated Codex plugin not found: {plugin_root}")
+
+    manifest_path = plugin_root / ".codex-plugin" / "plugin.json"
+    if not manifest_path.is_file():
+        raise SystemExit(f"Missing Codex manifest: {manifest_path}")
+    manifest = read_json(manifest_path)
+
+    manifest_name = manifest.get("name")
+    if manifest_name != plugin_name:
+        raise SystemExit(f"{manifest_path} declares name {manifest_name!r}, expected {plugin_name!r}")
+
+    skills_path = manifest.get("skills")
+    if not isinstance(skills_path, str) or not skills_path:
+        raise SystemExit(f"{manifest_path} must declare a non-empty skills path")
+    resolved_skills_path = (plugin_root / skills_path).resolve()
+    try:
+        resolved_skills_path.relative_to(plugin_root.resolve())
+    except ValueError as exc:
+        raise SystemExit(f"{manifest_path} skills path must stay inside the plugin source") from exc
+    if not resolved_skills_path.exists():
+        raise SystemExit(f"Missing Codex skills payload path for {plugin_name}: {skills_path}")
+
+    return manifest
+
+
+def remove_existing(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+        return
+    if path.exists():
+        shutil.rmtree(path)
+
+
+def copy_plugin_payload(source: Path, marketplace_root: Path, plugin_name: str, verbose: bool) -> Path:
+    source_root = generated_codex_root(source) / plugin_name
+    plugins_dir = marketplace_root / "plugins"
+    plugin_target = plugins_dir / plugin_name
+    temporary_target = plugins_dir / f".{plugin_name}.installing"
+
+    plugins_dir.mkdir(parents=True, exist_ok=True)
+    remove_existing(temporary_target)
+    if verbose:
+        print(f"Copying plugins/codex/{plugin_name}")
+    shutil.copytree(source_root, temporary_target, ignore=shutil.ignore_patterns(*IGNORED_COPY_NAMES))
+    remove_existing(plugin_target)
+    temporary_target.rename(plugin_target)
+    return plugin_target
+
+
+def marketplace_entry(
+    plugin_name: str,
+    manifest: dict,
+    args: argparse.Namespace,
+) -> dict:
+    interface = manifest.get("interface", {})
+    category = interface.get("category") if isinstance(interface, dict) else None
+    return {
+        "name": plugin_name,
+        "source": {
+            "source": "local",
+            "path": f"./plugins/{plugin_name}",
+        },
+        "policy": {
+            "installation": args.install_policy,
+            "authentication": args.authentication_policy,
+        },
+        "category": category or "Coding",
+    }
+
+
+def initial_marketplace_manifest() -> dict:
+    return {
+        "name": MARKETPLACE_NAME,
+        "interface": {"displayName": MARKETPLACE_DISPLAY_NAME},
+        "plugins": [],
+    }
+
+
+def read_marketplace_manifest(manifest_path: Path) -> dict:
+    if not manifest_path.exists():
+        return initial_marketplace_manifest()
+    return read_json(manifest_path)
+
+
+def write_marketplace_manifest(
+    marketplace_root: Path,
+    manifests: dict[str, dict],
+    args: argparse.Namespace,
+    verbose: bool,
+) -> Path:
+    manifest_path = marketplace_root / ".agents" / "plugins" / "marketplace.json"
+    manifest = read_marketplace_manifest(manifest_path)
+    manifest["name"] = MARKETPLACE_NAME
+
+    interface = manifest.setdefault("interface", {})
+    if not isinstance(interface, dict):
+        raise SystemExit("marketplace.json field 'interface' must be an object")
+    interface["displayName"] = MARKETPLACE_DISPLAY_NAME
+
+    plugins = manifest.setdefault("plugins", [])
+    if not isinstance(plugins, list):
+        raise SystemExit("marketplace.json field 'plugins' must be an array")
+
+    entries = [marketplace_entry(name, manifests[name], args) for name in sorted(manifests)]
+    replacing = set(manifests)
+    retained = [
+        plugin
+        for plugin in plugins
+        if not (isinstance(plugin, dict) and plugin.get("name") in replacing)
+    ]
+    manifest["plugins"] = retained + entries
+
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if verbose:
+        print(f"Wrote {manifest_path}")
+    return manifest_path
+
+
+def run_command(command: list[str], env: dict[str, str], verbose: bool) -> None:
+    if verbose:
+        print(f"$ {shlex.join(command)}")
+    try:
+        subprocess.run(command, env=env, check=True)
+    except FileNotFoundError as exc:
+        raise SystemExit(f"Could not find executable: {command[0]}") from exc
+    except subprocess.CalledProcessError as exc:
+        rendered_command = shlex.join(command)
+        raise SystemExit(f"Command failed with exit code {exc.returncode}: {rendered_command}") from exc
+
+
+def register_marketplace(codex: str, codex_home: Path, marketplace_root: Path, verbose: bool) -> None:
+    codex_home.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env["CODEX_HOME"] = str(codex_home)
+    run_command([codex, "plugin", "marketplace", "add", str(marketplace_root)], env=env, verbose=verbose)
+
+
+def print_plan(
+    plugin_names: list[str],
+    source: Path,
+    codex_home: Path,
+    marketplace_root: Path,
+    args: argparse.Namespace,
+) -> None:
+    print("Would install shatterproof Codex plugins")
+    print(f"  Source: {source}")
+    print(f"  Codex home: {codex_home}")
+    print(f"  Marketplace root: {marketplace_root}")
+    print(f"  Plugins: {', '.join(plugin_names)}")
+    print(f"  Register marketplace: {'no' if args.skip_register else 'yes'}")
+
+
+def main() -> int:
+    args = parse_args()
+    source = resolved(args.source)
+    codex_home = resolved(args.codex_home)
+    marketplace_root = marketplace_root_for(args, codex_home)
+    plugin_names = discover_plugins(source, args.plugins)
+    manifests = {name: validate_plugin_source(source, name) for name in plugin_names}
+
+    if args.dry_run:
+        print_plan(plugin_names, source, codex_home, marketplace_root, args)
+        return 0
+
+    plugin_targets = [
+        copy_plugin_payload(source, marketplace_root, name, verbose=args.verbose)
+        for name in plugin_names
+    ]
+    write_marketplace_manifest(marketplace_root, manifests, args, verbose=args.verbose)
+
+    if args.skip_register:
+        print("Installed shatterproof Codex plugin files.")
+        print(f"Marketplace root: {marketplace_root}")
+        for target in plugin_targets:
+            print(f"Plugin root: {target}")
+        quoted_codex_home = shlex.quote(str(codex_home))
+        quoted_marketplace_root = shlex.quote(str(marketplace_root))
+        print(
+            "Register later with: "
+            f"CODEX_HOME={quoted_codex_home} {args.codex} plugin marketplace add {quoted_marketplace_root}"
+        )
+        return 0
+
+    register_marketplace(args.codex, codex_home, marketplace_root, verbose=args.verbose)
+    print("Installed shatterproof Codex plugins.")
+    print(f"Marketplace root: {marketplace_root}")
+    for target in plugin_targets:
+        print(f"Plugin root: {target}")
+    print("Restart any running Codex session to load the plugins.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

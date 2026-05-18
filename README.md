@@ -30,6 +30,20 @@ Then install either or both plugins from the Claude Code plugin chooser.
 See [`docs/installing-plugins.md`](docs/installing-plugins.md) for Codex
 install instructions and offline notes.
 
+## Install (OpenAI Codex)
+
+Generated Codex plugin artifacts are committed under `plugins/codex/shatter/`
+and `plugins/codex/refute/`. From the repository root, install both into a
+local Codex marketplace:
+
+```bash
+scripts/install-codex-plugins
+```
+
+Then restart Codex and verify the `Shatter` and `Refute` plugins appear in
+`/plugins`. See [`docs/installing-plugins.md`](docs/installing-plugins.md)
+for single-plugin installs and non-default Codex home paths.
+
 ## Repository structure
 
 - `catalog/` — canonical sources for skills and plugin metadata.
