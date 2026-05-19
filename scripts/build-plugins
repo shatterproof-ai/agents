@@ -230,7 +230,6 @@ def write_plugin_manifests(plugin: PluginSpec, version: str, out_root: Path) -> 
         "description": plugin.description,
         "version": version,
         "author": {"name": claude_author} if isinstance(claude_author, str) else claude_author,
-        "skills": "./skills/",
     }
     codex_manifest = {
         "name": plugin.name,
@@ -252,7 +251,7 @@ def write_marketplace_manifest(catalog: Catalog, out_root: Path) -> None:
             "description": catalog.plugins[name].description,
             "version": catalog.versions[name]["version"],
             "source": f"./plugins/claude/{name}",
-            "author": catalog.plugins[name].claude.get("author", "Shatterproof AI"),
+            "author": {"name": catalog.plugins[name].claude.get("author", "Shatterproof AI")},
         })
     payload = {
         "name": "shatterproof",

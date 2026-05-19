@@ -4,6 +4,5 @@
   },
   "description": "Install Refute and diagnose its setup for symbol-aware refactoring.",
   "name": "refute",
-  "skills": "./skills/",
   "version": "0.1.0"
 }
