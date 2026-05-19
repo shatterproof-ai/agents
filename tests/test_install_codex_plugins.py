@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 
+BOOTSTRAP = Path(__file__).resolve().parents[1] / "install" / "codex-home.sh"
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "install-codex-plugins"
 
 
@@ -39,12 +42,30 @@ def run_installer(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, capture_output=True, text=True, check=False)
 
 
+def run_bootstrap(source: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    env = {
+        **os.environ,
+        "SHATTER_AGENTS_SOURCE": str(source),
+        "CODEX_HOME": str(source / ".codex"),
+    }
+    command = [str(BOOTSTRAP), *args]
+    return subprocess.run(command, capture_output=True, text=True, check=False, env=env)
+
+
 def test_help_flag_succeeds() -> None:
     result = run_installer("--help")
 
     assert result.returncode == 0
     assert "Install generated shatterproof Codex plugins" in result.stdout
     assert "--marketplace-root" in result.stdout
+
+
+def test_bootstrap_help_flag_succeeds() -> None:
+    result = subprocess.run([str(BOOTSTRAP), "--help"], capture_output=True, text=True, check=False)
+
+    assert result.returncode == 0
+    assert "curl -fsSL https://raw.githubusercontent.com/shatterproof-ai/shatter-agents/main/install/codex-home.sh | bash" in result.stdout
+    assert "Options are forwarded to scripts/install-codex-plugins" in result.stdout
 
 
 def test_dry_run_does_not_write_marketplace(tmp_path: Path) -> None:
@@ -63,6 +84,28 @@ def test_dry_run_does_not_write_marketplace(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "Would install shatterproof Codex plugins" in result.stdout
+    assert "Plugins: shatter" in result.stdout
+    assert not marketplace.exists()
+
+
+def test_bootstrap_uses_existing_source_without_network(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    create_generated_plugin(source, "shatter")
+    (source / "scripts").mkdir()
+    shutil.copy2(SCRIPT, source / "scripts" / "install-codex-plugins")
+    marketplace = tmp_path / "marketplace"
+
+    result = run_bootstrap(
+        source,
+        "--marketplace-root",
+        str(marketplace),
+        "--skip-register",
+        "--dry-run",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Would install shatterproof Codex plugins" in result.stdout
+    assert f"Source: {source}" in result.stdout
     assert "Plugins: shatter" in result.stdout
     assert not marketplace.exists()
 

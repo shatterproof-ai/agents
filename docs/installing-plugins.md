@@ -26,8 +26,13 @@ Codex plugins from this marketplace are generated under:
 - `plugins/codex/refute/`
 
 Each generated plugin has a `.codex-plugin/plugin.json` manifest and a
-`skills/` directory. Install both plugins into a local Codex marketplace
-from the repository root:
+`skills/` directory. Install both plugins into a local Codex marketplace:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/shatterproof-ai/shatter-agents/main/install/codex-home.sh | bash
+```
+
+From a cloned checkout, run the local installer directly:
 
 ```bash
 scripts/install-codex-plugins
