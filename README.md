@@ -33,8 +33,13 @@ install instructions and offline notes.
 ## Install (OpenAI Codex)
 
 Generated Codex plugin artifacts are committed under `plugins/codex/shatter/`
-and `plugins/codex/refute/`. From the repository root, install both into a
-local Codex marketplace:
+and `plugins/codex/refute/`. Install both into a local Codex marketplace:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/shatterproof-ai/shatter-agents/main/install/codex-home.sh | bash
+```
+
+From a cloned checkout, run the local installer directly:
 
 ```bash
 scripts/install-codex-plugins
