@@ -35,6 +35,30 @@ When running shell commands, **always prefix with `rtk`**. This reduces context
 usage by 60-90% with zero behavior change. If `rtk` has no filter for a
 command, it passes through unchanged, so it is always safe to use.
 
+### Installing rtk
+
+`rtk` is [Rust Token Killer](https://github.com/rtk-ai/rtk) (`rtk-ai/rtk`). On a
+fresh machine without it installed, every `rtk`-prefixed command fails. Install
+it with one of:
+
+```bash
+# Homebrew (recommended)
+brew install rtk
+
+# Or the shell installer
+curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh
+
+# Or via cargo, from the canonical repo
+cargo install --git https://github.com/rtk-ai/rtk
+```
+
+Avoid plain `cargo install rtk`: the `rtk` name on crates.io can resolve to an
+unrelated "Rust Type Kit" project. Verify you have the right tool with
+`rtk gain`, which should print token-savings stats rather than an error.
+
+If `rtk` is not installed and cannot be installed, run the underlying commands
+without the prefix — behavior is identical, only more verbose.
+
 ```bash
 rtk git status
 rtk git diff
@@ -80,3 +104,18 @@ Closure requires the merge SHA to be reachable from `main`. Use:
 bd close <id> --reason "<merge-sha> landed on main"
 ```
 <!-- END BEADS INTEGRATION -->
+
+## Persistent knowledge: `bd remember` vs. global agent memory
+
+The Beads block above says to use `bd remember` and not MEMORY.md files. That
+prohibition is about **in-repo `MEMORY.md` files** — do not create per-repo
+markdown memory files in this working tree.
+
+It does **not** refer to an agent's own global memory system (for example,
+Claude Code's `~/.claude/projects/.../memory/` directory). That global memory is
+separate and remains available for cross-session, agent-level notes.
+
+Rule of thumb: for knowledge specific to **this project**, prefer
+`bd remember` so it lives with the issue tracker. Use the global agent memory
+directory only for agent-level or cross-project notes, never as a substitute for
+`bd remember` on project facts.
