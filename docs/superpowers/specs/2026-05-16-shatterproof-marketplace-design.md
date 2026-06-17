@@ -7,6 +7,27 @@ date: 2026-05-16
 
 # Shatterproof Marketplace — Design
 
+## As-Built Status
+
+> **This is a historical planning artifact, not a current requirements doc.**
+> The v1 plan described below is fully implemented and shipping. Read the rest
+> of this document as a record of design intent at the time of writing, not as
+> a description of pending work.
+>
+> - **Migration (Section 3):** complete. The "From → To" table and
+>   "Initial plugin and skill content" describe a one-time migration that has
+>   already happened; the old paths it maps from no longer exist.
+> - **Deferred work (Section 6):** historical. Seven of the eight skills listed
+>   as deferred have since shipped and now appear in `catalog/plugins.json`
+>   (`install-shatter`, `add-shatter-target`, `interpret-shatter-spec`,
+>   `wire-shatter-ci`, `shatter-doctor`, `refute-rename`, `pin-refute`). The
+>   one exception is `refute-from-plan` (Section 6's `agents-ya6`, tracked
+>   today as `sa-ya6`), which remains deferred as triage-only pending a
+>   ratified plan-file format.
+>
+> For the current set of shipped plugins and skills, see `catalog/plugins.json`
+> and the generated trees under `plugins/`.
+
 ## 0. Context
 
 `shatter-agents` today is a single-plugin Codex-format repository containing
