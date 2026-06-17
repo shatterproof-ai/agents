@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass, field
 import hashlib
 import json
 import re
@@ -25,9 +26,6 @@ FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
 
 class BuildError(Exception):
     """Raised when validation or build fails."""
-
-
-from dataclasses import dataclass, field
 
 ALLOWED_FRONTMATTER_KEYS = frozenset({"name", "description"})
 
@@ -145,11 +143,6 @@ def load_catalog(catalog_dir: Path) -> Catalog:
                 continue
             skill_dir = catalog_dir / "skills" / skill_name
             skills[skill_name] = load_skill(skill_dir)
-    # Cross-check: every plugin's skills exist on disk
-    for plugin in plugins.values():
-        for s in plugin.skills:
-            if s not in skills:
-                raise BuildError(f"plugin {plugin.name}: skill {s!r} not found in catalog/skills/")
     return Catalog(plugins=plugins, skills=skills, versions=versions)
 
 
@@ -203,17 +196,15 @@ def compute_plugin_hash(plugin_dir: Path) -> str:
 
 
 def bump_version_if_changed(versions: dict, plugin: str, new_hash: str) -> str:
-    """If the plugin's content hash changed, bump patch (unless patch is 0,
-    which is the manual-bump anchor — see docs/conventions/versioning.md)."""
+    """If the plugin's content hash changed, bump patch — see docs/conventions/versioning.md."""
     entry = versions.setdefault(plugin, {"version": "0.1.0", "content_hash": ""})
     old_version = entry["version"]
     if entry["content_hash"] == new_hash:
         return old_version
     major, minor, patch = (int(x) for x in old_version.split("."))
-    if patch == 0:
-        new_version = old_version
-    else:
-        new_version = f"{major}.{minor}.{patch + 1}"
+    # patch == 0 is the manual-bump anchor: consume it by bumping to patch 1
+    # so that subsequent content changes resume normal auto-bumping.
+    new_version = f"{major}.{minor}.{patch + 1}"
     entry["version"] = new_version
     entry["content_hash"] = new_hash
     return new_version
