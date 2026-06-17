@@ -45,7 +45,7 @@ def test_skill_metadata_parses(skill_dir: Path):
 def test_skill_companion_scripts_are_executable(skill_dir: Path):
     scripts_dir = skill_dir / "scripts"
     if not scripts_dir.is_dir():
-        return
+        pytest.skip("no scripts/ directory")
     for script in scripts_dir.iterdir():
         if script.is_file():
             mode = script.stat().st_mode
