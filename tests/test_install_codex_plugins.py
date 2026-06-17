@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 
@@ -146,6 +147,70 @@ def test_installer_writes_local_marketplace_from_generated_codex_output(tmp_path
         "authentication": "ON_INSTALL",
     }
     assert entries["shatter"]["category"] == "Developer Tools"
+
+
+def test_bootstrap_download_path_cleans_up_tmpdir(tmp_path: Path) -> None:
+    # Exercise the download_source() path without real network access by
+    # shadowing `curl` and `tar` on PATH. The fake `tar` populates the
+    # extraction directory from a local fixture. After the bootstrap exits,
+    # no temp directory it created under TMPDIR should remain on disk.
+    fixture = tmp_path / "fixture"
+    create_generated_plugin(fixture, "shatter")
+    (fixture / "scripts").mkdir()
+    installer_copy = fixture / "scripts" / "install-codex-plugins"
+    shutil.copy2(SCRIPT, installer_copy)
+    installer_copy.chmod(0o755)
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    curl = fake_bin / "curl"
+    curl.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    curl.chmod(0o755)
+    tar = fake_bin / "tar"
+    tar.write_text(
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env bash
+            # Drain stdin (the piped curl output) so curl does not see SIGPIPE.
+            cat >/dev/null 2>&1 || true
+            target=""
+            while [[ $# -gt 0 ]]; do
+              case "$1" in
+                -C) target="$2"; shift 2;;
+                *) shift;;
+              esac
+            done
+            cp -a "$FIXTURE_SRC"/. "$target"/
+            """
+        ),
+        encoding="utf-8",
+    )
+    tar.chmod(0o755)
+
+    tmproot = tmp_path / "tmp"
+    tmproot.mkdir()
+    marketplace = tmp_path / "marketplace"
+
+    env = {
+        **os.environ,
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+        "TMPDIR": str(tmproot),
+        "FIXTURE_SRC": str(fixture),
+        "CODEX_HOME": str(tmp_path / ".codex"),
+    }
+    env.pop("SHATTER_AGENTS_SOURCE", None)
+
+    result = subprocess.run(
+        [str(BOOTSTRAP), "--marketplace-root", str(marketplace), "--skip-register", "--dry-run"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    leftovers = sorted(p.name for p in tmproot.iterdir())
+    assert leftovers == [], f"download_source leaked temp entries: {leftovers}"
 
 
 def test_installer_can_install_one_named_plugin(tmp_path: Path) -> None:
