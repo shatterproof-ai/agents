@@ -142,23 +142,24 @@ def test_bump_version_if_changed_noop_when_hash_matches():
     assert versions["shatter"]["version"] == "1.2.3"
 
 
-def test_bump_version_keeps_version_when_patch_is_zero():
-    """Patch=0 is the manual-bump anchor. First build after a manual
-    major/minor bump keeps the version and only updates the hash."""
+def test_bump_version_consumes_patch_zero_anchor():
+    """Patch=0 is the manual-bump anchor. First content change after a
+    manual major/minor bump bumps patch to 1 (consuming the anchor) so
+    subsequent changes resume normal auto-bumping."""
     build = _load_build_module()
     versions = {"shatter": {"version": "2.0.0", "content_hash": "old"}}
     bumped = build.bump_version_if_changed(versions, "shatter", "new")
-    assert bumped == "2.0.0"
+    assert bumped == "2.0.1"
     assert versions["shatter"]["content_hash"] == "new"
 
 
-def test_bump_version_initial_empty_hash_keeps_initial_version():
-    """A fresh plugin-versions.json entry (empty hash, patch=0) does not
-    bump on the very first build; it just records the hash."""
+def test_bump_version_initial_entry_bumps_to_patch_one():
+    """A fresh plugin-versions.json entry (empty hash, patch=0) bumps
+    to patch=1 on the first build, consuming the anchor."""
     build = _load_build_module()
     versions = {"shatter": {"version": "0.1.0", "content_hash": ""}}
     bumped = build.bump_version_if_changed(versions, "shatter", "first")
-    assert bumped == "0.1.0"
+    assert bumped == "0.1.1"
     assert versions["shatter"]["content_hash"] == "first"
 
 
@@ -191,7 +192,7 @@ def test_build_all_end_to_end(tmp_path):
     assert mp["plugins"][0]["name"] == "greetings"
     assert mp["plugins"][0]["source"] == "./plugins/claude/greetings"
     versions = json.loads((catalog / "plugin-versions.json").read_text())
-    assert versions["greetings"]["version"] == "0.1.0"   # patch=0 anchor; first build records hash, no bump
+    assert versions["greetings"]["version"] == "0.1.1"   # patch=0 anchor consumed; first build bumps to 0.1.1
     assert versions["greetings"]["content_hash"] != ""
 
 

@@ -22,13 +22,13 @@ plugin's freshly generated tree. The hash inputs:
 
 If the new hash differs from the recorded hash:
 
-- If the recorded `version` has `patch > 0`, the builder bumps the patch by
-  one and writes the new hash.
-- If the recorded `version` has `patch == 0`, the builder leaves the
-  version alone and only updates the hash. `patch == 0` is the
-  **manual-bump anchor**: it indicates the version was just set by a
-  human (initial `0.1.0`, or a manual bump to `1.0.0` / `2.3.0`), and the
-  builder should not auto-bump it on the first content-change after.
+- The builder bumps the patch by one and writes the new hash.
+- `patch == 0` is the **manual-bump anchor**: it indicates the version was
+  just set by a human (initial `0.1.0`, or a manual bump to `1.0.0` /
+  `2.3.0`). On the first content change after a manual bump, the builder
+  bumps patch to 1 (consuming the anchor), so `2.0.0` becomes `2.0.1`.
+  Subsequent content changes resume normal auto-bumping: `2.0.2`, `2.0.3`,
+  and so on.
 
 If the hash matches, no-op.
 
@@ -36,9 +36,8 @@ If the hash matches, no-op.
 
 Edit `catalog/plugin-versions.json` directly and set `version` to your
 target — always with `patch = 0`. Example: bumping `1.2.7` to `2.0.0`.
-The next build sees the patch=0 anchor and records the new hash without
-auto-bumping; subsequent content changes resume the auto-bump at
-`2.0.1`, `2.0.2`, and so on.
+The next content change bumps patch to 1 (`2.0.1`), then auto-bumping
+resumes normally: `2.0.2`, `2.0.3`, and so on.
 
 ## Why this approach
 
