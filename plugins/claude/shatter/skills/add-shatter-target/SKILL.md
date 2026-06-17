@@ -39,10 +39,15 @@ From the repo root:
 python3 scripts/run_targets.py --root . --json
 ```
 
-If `run_targets.py` is not on the working path, it ships alongside the
-`run-shatter` skill in the Shatter plugin (typically in the plugin
-cache under `.../skills/run-shatter/scripts/run_targets.py`). The script
-prints a JSON payload with one entry per discovered target including
+If `run_targets.py` is not at `scripts/run_targets.py` relative to the
+repo root, it ships alongside the `run-shatter` skill in the Shatter
+plugin. Locate it without hard-coding a version number:
+
+```bash
+find ~/.claude/plugins/cache -name run_targets.py -path '*/run-shatter/scripts/*' 2>/dev/null | head -1
+```
+
+The helper prints a JSON payload with one entry per discovered target including
 `root`, `languages`, `status` (`integrated` or `not_integrated`), and
 `reason`. Focus on targets where `status == "not_integrated"`.
 
