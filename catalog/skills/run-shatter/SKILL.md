@@ -35,6 +35,14 @@ issues.
 python3 scripts/run_targets.py --root <repo> --json
 ```
 
+If `run_targets.py` is not at `scripts/run_targets.py` relative to the
+repo root, it ships alongside this skill in the Shatter plugin. Locate it
+without hard-coding a version number:
+
+```bash
+find ~/.claude/plugins/cache -name run_targets.py -path '*/run-shatter/scripts/*' 2>/dev/null | head -1
+```
+
 The bundled helper:
 
 - discovers supported-language targets (`Cargo.toml`, `go.mod`,
