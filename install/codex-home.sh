@@ -6,6 +6,19 @@ REPO_NAME="${SHATTER_AGENTS_REPO_NAME:-shatter-agents}"
 REPO_REF="${SHATTER_AGENTS_REF:-main}"
 SOURCE="${SHATTER_AGENTS_SOURCE:-}"
 
+# Populated only when we download into a temp directory; the script-level EXIT
+# trap below removes it. Keeping this global (rather than a function-local) is
+# what makes cleanup reliable: the trap is evaluated at exit, by which point a
+# local from download_source would already be out of scope.
+DOWNLOAD_TMPDIR=""
+
+cleanup() {
+  if [[ -n "$DOWNLOAD_TMPDIR" ]]; then
+    rm -rf "$DOWNLOAD_TMPDIR"
+  fi
+}
+trap cleanup EXIT
+
 usage() {
   cat <<'EOF'
 Install Shatterproof Codex plugins into a local Codex marketplace.
@@ -44,9 +57,7 @@ download_source() {
   require_command curl
   require_command tar
 
-  local tmpdir
-  tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' EXIT
+  DOWNLOAD_TMPDIR="$(mktemp -d)"
 
   local archive_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/heads/${REPO_REF}.tar.gz"
   if [[ "$REPO_REF" == refs/* ]]; then
@@ -54,8 +65,8 @@ download_source() {
   fi
 
   echo "[shatterproof-install:codex] downloading ${REPO_OWNER}/${REPO_NAME}@${REPO_REF}" >&2
-  curl -fsSL "$archive_url" | tar -xz --strip-components=1 -C "$tmpdir"
-  SOURCE="$tmpdir"
+  curl -fsSL "$archive_url" | tar -xz --strip-components=1 -C "$DOWNLOAD_TMPDIR"
+  SOURCE="$DOWNLOAD_TMPDIR"
 }
 
 if [[ -z "$SOURCE" ]]; then
@@ -64,4 +75,8 @@ else
   SOURCE="$(cd "$SOURCE" && pwd)"
 fi
 
-exec "$SOURCE/scripts/install-codex-plugins" --source "$SOURCE" "$@"
+# Run the installer as a child process rather than exec'ing it: exec would
+# replace this shell, so the EXIT trap (and thus tmpdir cleanup) would never
+# run when SOURCE is a downloaded temp directory. Propagate the installer's
+# exit status; the trap fires on the way out.
+"$SOURCE/scripts/install-codex-plugins" --source "$SOURCE" "$@"
