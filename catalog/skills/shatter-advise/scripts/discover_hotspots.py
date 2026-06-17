@@ -160,7 +160,11 @@ def load_shatter_artifacts(run_dir: Path | None) -> list[dict]:
     summary_path = run_dir / "summary.json"
     if not summary_path.is_file():
         return []
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"warning: could not parse {summary_path}: {e}", file=sys.stderr)
+        return []
     artifacts = []
     for target in summary.get("targets", []):
         root_name = target.get("root", "")
@@ -168,7 +172,11 @@ def load_shatter_artifacts(run_dir: Path | None) -> list[dict]:
             spec_candidates = list((run_dir / root_name).glob("*.spec.json")) if (run_dir / root_name).is_dir() else []
             spec_data: dict = {}
             for sp in spec_candidates:
-                d = json.loads(sp.read_text(encoding="utf-8"))
+                try:
+                    d = json.loads(sp.read_text(encoding="utf-8"))
+                except json.JSONDecodeError as e:
+                    print(f"warning: could not parse {sp}: {e}", file=sys.stderr)
+                    continue
                 if d.get("target") == symbol:
                     spec_data = d
                     break
@@ -236,7 +244,7 @@ def merge_artifacts(candidates: list[dict], artifacts: list[dict], root: Path | 
         root_matches_project = root_name is not None and artifact_root == root_name
         for candidate in candidates:
             file_path = candidate["file"]
-            path_matches = file_path.startswith(artifact_root + "/") or artifact_root in file_path
+            path_matches = file_path.startswith(artifact_root + "/") or f"/{artifact_root}/" in f"/{file_path}"
             if root_matches_project or path_matches:
                 if artifact["outcome"] in ("unsupported", "error_only"):
                     candidate["artifact_backed"] = True
