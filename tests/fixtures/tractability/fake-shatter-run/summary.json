@@ -1,0 +1,19 @@
+{
+  "summary": {
+    "integrated": 1,
+    "succeeded": 0,
+    "failed": 1,
+    "not_integrated": 0
+  },
+  "targets": [
+    {
+      "root": "go-handlers",
+      "languages": ["go"],
+      "status": "integrated",
+      "outcome": "failed",
+      "shatter_outcomes": {
+        "projects_handler.UpdateProject": "unsupported"
+      }
+    }
+  ]
+}

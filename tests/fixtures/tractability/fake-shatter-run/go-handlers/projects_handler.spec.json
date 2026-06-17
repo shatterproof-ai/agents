@@ -1,0 +1,6 @@
+{
+  "target": "projects_handler.UpdateProject",
+  "outcome": "unsupported",
+  "reason": "parameter type *sql.DB is not constructible",
+  "cases": []
+}
