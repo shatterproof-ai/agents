@@ -1,0 +1,7 @@
+{
+  "name": "ts-async-store",
+  "version": "1.0.0",
+  "dependencies": {
+    "zustand": "^4.0.0"
+  }
+}
