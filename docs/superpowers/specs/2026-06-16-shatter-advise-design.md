@@ -15,40 +15,52 @@ The taxonomy spec driving both skills lives at
 pattern from beads issue `agents-arz` is a first-class addition to that
 catalog. The refute extract-function gap is tracked in `agents-2b3`.
 
-Both skills are thin wrappers around a shared analyzer script. They differ
-only in which findings they filter and present.
+Both skills share a discovery script and a common skill workflow. They differ
+in which findings they present and which track they emphasize.
 
 ---
 
 ## Execution Model
 
-Both skills invoke a shared script:
+The analysis work is split between a script and the agent:
+
+**Script** (`catalog/skills/shatter-advise/scripts/discover_hotspots.py`):
+Handles deterministic work that is testable without an LLM:
+- detect languages from project markers
+- find candidate files by static signals (path conventions, import patterns,
+  grep-level structural patterns)
+- load and parse Shatter run artifacts if `--run-dir` is provided
+- proto-cluster candidates by static signals
+- write a structured discovery JSON the agent reads to drive deep analysis
 
 ```
-catalog/skills/shatter-advise/scripts/analyze_tractability.py
+discover_hotspots.py
   --root <path>           project root to analyze (required)
-  --mode advise|gaps|both which findings to emit (default: advise)
   --run-dir <path>        optional prior run-shatter output directory
-  --output-dir <path>     where to write reports (default: shatter-review/advise-<timestamp>/)
-  --json                  write findings.json alongside report.md
+  --output <path>         where to write discovery.json (required)
 ```
-
-`shatter-advise` invokes with `--mode advise`. `shatter-gaps` invokes with
-`--mode gaps`. `--mode both` is available for tests and users who want both
-tracks from one scan.
 
 Exit behavior:
-- `0` on success (report written, findings emitted)
+- `0` on success
 - `1` on input error (missing root, unreadable run-dir)
-- `2` on partial failure (some hotspots failed analysis; report still written)
 
-The SKILL.md files drive input collection, script invocation, and console
-summary presentation. They do not perform analysis manually. All taxonomy
-logic lives in the shared script.
+**Agent** (guided by SKILL.md):
+Handles everything that requires reading and reasoning about code:
+- read representative files from the script's shortlist
+- apply taxonomy gates (constructibility, executability, coverage depth,
+  measurement) — requires understanding code structure and semantics
+- identify specific branch logic, plain-data contracts, shell/core boundaries
+- assign confidence based on evidence quality
+- write concrete cluster prescriptions
+- produce findings, report.md, and findings.json
 
-The script is installed as a companion to the `shatter-advise` skill, at the
-same path relative to the skill root used by `run-shatter`'s
-`scripts/run_targets.py`.
+The SKILL.md files invoke the script, read its discovery output, then guide
+the agent through deep analysis, cluster synthesis, and report generation.
+Both `shatter-advise` and `shatter-gaps` follow this same flow; they differ
+in which dispositions they include in their output.
+
+The script is installed alongside the skill, following the same convention as
+`run-shatter`'s `scripts/run_targets.py`.
 
 ---
 
@@ -510,22 +522,40 @@ future design.
 
 ## Testing
 
-Minimal required tests using small synthetic fixture repos:
+Tests are split by what is testable at each layer.
 
-- analyzer accepts `--root` without a run directory (source-only mode)
-- analyzer accepts `--root` with a synthetic run-shatter directory
-- artifact-backed `unsupported`/`error_only` outcomes outrank source-only
-  hotspots within clusters
-- repeated handler-like files in a fixture form one cluster, not N findings
-- one observation emits linked project and engine findings with correct ids
+### Script tests (`discover_hotspots.py`)
+
+These are deterministic and do not require an LLM:
+
+- script accepts `--root` without a run directory
+- script accepts `--root` with a synthetic run-shatter directory
+- artifact-backed `unsupported`/`error_only` outcomes appear in discovery
+  output and are flagged as higher-priority than source-only heuristic hotspots
+- handler-like files in a fixture produce handler-surface candidates
+- generated files (`*.gen.go`, `*_generated.ts`) appear in the discovery
+  output with `generated_glue` signal
+- async-mixed files (containing `async fn` with branching) produce
+  `async_mixed` signal
+- discovery JSON is valid and parseable
+
+### Skill acceptance checks
+
+These verify agent behavior against synthetic fixtures and require running
+the full skill:
+
+- repeated handler-like files form one cluster, not N separate findings
+- one observation produces linked project and engine findings with correct
+  `linked_finding_ids`
 - generated glue without project logic produces `JUSTIFIED-SKIP`
-- generated glue with project logic produces `PROJECT-FIX` (not skip)
+- generated glue with project logic produces `PROJECT-FIX`
 - both `report.md` and `findings.json` are written to the output directory
-- `--mode both` writes both advise and gaps outputs
+- cluster prescriptions answer the required 8 questions (what moves, what
+  contract, what stays, first target, expected improvement, semantic risks)
 
 Fixture repos should be small synthetic directories with handler-like Go/TS
-files and fake Shatter spec JSON artifacts. They do not require real Shatter
-execution.
+files and fake Shatter spec JSON artifacts. Real Shatter execution is not
+required.
 
 ---
 
