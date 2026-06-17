@@ -31,7 +31,9 @@ Same as shatter-advise: accept `--root` and optional `--run-dir`.
 
 ### 2. Run discovery script
 
-Same script as shatter-advise. Create a timestamped output directory:
+Same script as shatter-advise. The script is shared with shatter-advise. Locate the shatter-agents repo root the same way as shatter-advise (find `catalog/skills/shatter-advise/SKILL.md`); the script is at `catalog/skills/shatter-advise/scripts/discover_hotspots.py` relative to that root. Substitute the full path for `<skill-dir>/../shatter-advise`.
+
+Create a timestamped output directory:
 
 ```bash
 OUTPUT_DIR="shatter-review/gaps-$(date +%Y%m%dT%H%M%S)"
@@ -42,24 +44,50 @@ python3 <skill-dir>/../shatter-advise/scripts/discover_hotspots.py \
   [--run-dir <run-dir>]
 ```
 
-### 3–5. Discovery, clustering, and deep analysis
+### 3. Read discovery output
 
-Follow the same Phase 1, Phase 1.5, and Phase 2 process as shatter-advise
-(same cluster selection, same taxonomy gates, same representative example
-selection). The difference is what you look for during deep analysis:
+Read `discovery.json`. Note `languages`, `proto_clusters`, `candidates`, and `artifact_mode`.
 
-For ENGINE-GAP findings, ask: "Is this a pattern the engine should handle
-centrally, so no project needs to reshape around it?" Examples:
+If `candidates` is empty, write a brief `engine-gaps.md` stating no tractability hotspots were detected, populate `findings.json` with zero-value budget fields, print the console summary with all zeros, and stop.
 
-- **Constructibility**: Rust by-reference parameters, integer width/signedness
-  loss, missing serde rename handling, field erosion during mutation, opaque
-  types that are common enough to deserve a built-in generator.
-- **Executability**: classes of setup failures Shatter could avoid by providing
-  deterministic stubs for common resources (e.g. a test database URL injector).
-- **Coverage depth**: unsupported dispatch forms (factory capture, closure
-  return methods), missing generator support for common shapes.
-- **Measurement**: Shatter counting lines in uninstrumented libraries, false
-  "covered" lines from partial instrumentation.
+### 4. Select clusters and representative examples (Phase 1.5)
+
+From the proto-clusters, select up to **8 clusters** to analyze deeply,
+prioritizing:
+1. Clusters with artifact-backed candidates first
+2. Then clusters by candidate count and signal strength
+
+For each cluster, select up to **3 representative examples** — prefer
+artifact-backed files, then files with the most signals, then largest files.
+
+Record the budget in the report header:
+```
+Detected N hotspots.
+Formed N clusters.
+Deeply analyzing N clusters and up to 3 examples each.
+```
+
+### 5. Deep analyze each cluster (Phase 2)
+
+For each selected cluster, read the representative source files. The analytic
+question is ENGINE-GAP, not project-fix: **"Is this a pattern the engine
+should handle centrally, so no project needs to reshape around it?"**
+
+Apply the four tractability gates as diagnostic lenses only — to identify
+*what* Shatter fails to handle, not to recommend project refactors:
+
+**Constructibility**: Rust by-reference parameters, integer width/signedness
+loss, missing serde rename handling, field erosion during mutation, opaque
+types common enough to deserve a built-in generator.
+
+**Executability**: classes of setup failures Shatter could avoid by providing
+deterministic stubs for common resources (e.g. a test database URL injector).
+
+**Coverage depth**: unsupported dispatch forms (factory capture, closure
+return methods), missing generator support for common shapes.
+
+**Measurement**: Shatter counting lines in uninstrumented libraries, false
+"covered" lines from partial instrumentation.
 
 When the same observation could be solved by either a project refactor OR an
 engine fix, note both. Record the project-side fix as a linked finding with

@@ -41,6 +41,8 @@ use those directly.
 Locate the companion script at the same path as this skill file, under
 `scripts/discover_hotspots.py`. Create a timestamped output directory:
 
+The script lives alongside this skill file. Locate it by finding this SKILL.md file from the project's shatter-agents repo root; the script is at `catalog/skills/shatter-advise/scripts/discover_hotspots.py` relative to that root. Substitute the full path for `<skill-dir>`.
+
 ```bash
 OUTPUT_DIR="shatter-review/advise-$(date +%Y%m%dT%H%M%S)"
 mkdir -p "$OUTPUT_DIR"
@@ -59,6 +61,8 @@ Read `discovery.json`. Note:
 - `proto_clusters`: initial groupings by failure shape
 - `candidates`: individual hotspot files with signals and priority
 - `artifact_mode`: whether Shatter artifacts were loaded
+
+If `candidates` is empty, write a brief `report.md` stating no tractability hotspots were detected, populate `findings.json` with zero-value budget fields, print the console summary with all zeros, and stop.
 
 ### 4. Select clusters and representative examples (Phase 1.5)
 
@@ -107,6 +111,8 @@ counted in the denominator.
 - *Side effects*: Does the function mutate global state, write to disk, or
   make network calls on every invocation?
 
+Fold visibility and side-effect observations into the nearest gate's diagnosis — visibility belongs under coverage_depth, side effects belong under executability — or record them in `manual_review_notes` if they do not fit cleanly.
+
 **Generated glue**: Classify carefully:
 - Generated code with no project decisions → `JUSTIFIED-SKIP`
 - Generated code containing project decisions → `PROJECT-FIX` (move logic
@@ -124,6 +130,8 @@ For each cluster, assign:
 
 For every PROJECT-FIX cluster, the prescription must answer all eight
 questions:
+
+Plain data means primitive types, structs/records of primitives, and enums — no database handles, no HTTP clients, no file descriptors, no closures.
 
 1. What exact decision logic moves?
 2. What new helper or core function should exist?
