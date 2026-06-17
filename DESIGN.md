@@ -1,7 +1,14 @@
 # Shatterproof Marketplace — Design
 
-This is a short pointer file. The canonical design document is at
+`shatter-agents` is a plugin marketplace for Claude Code and Codex that ships
+two plugins (`shatter`, `refute`) built from canonical sources under
+`catalog/`. This is a short pointer file. The canonical design document is at
 [`docs/superpowers/specs/2026-05-16-shatterproof-marketplace-design.md`](docs/superpowers/specs/2026-05-16-shatterproof-marketplace-design.md).
+
+Specs:
+
+- [`docs/specs/2026-06-16-shatter-tractability-taxonomy.md`](docs/specs/2026-06-16-shatter-tractability-taxonomy.md)
+  — how Shatter findings are classified by tractability and disposition.
 
 Conventions split out into their own documents:
 
