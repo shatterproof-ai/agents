@@ -2,7 +2,7 @@
   "author": {
     "name": "Shatterproof AI"
   },
-  "description": "Install Refute and diagnose its setup for symbol-aware refactoring.",
+  "description": "Install Refute, diagnose its setup, and drive symbol-aware refactors.",
   "name": "refute",
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
