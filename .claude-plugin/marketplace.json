@@ -14,16 +14,16 @@
       "description": "Install, run, and review Shatter; draft markdown issue reports.",
       "name": "shatter",
       "source": "./plugins/claude/shatter",
-      "version": "0.1.0"
+      "version": "0.1.1"
     },
     {
       "author": {
         "name": "Shatterproof AI"
       },
-      "description": "Install Refute and diagnose its setup for symbol-aware refactoring.",
+      "description": "Install Refute, diagnose its setup, and drive symbol-aware refactors.",
       "name": "refute",
       "source": "./plugins/claude/refute",
-      "version": "0.1.0"
+      "version": "0.1.1"
     }
   ]
 }
