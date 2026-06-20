@@ -27,8 +27,9 @@ Add the marketplace to your settings:
 
 Then install either or both plugins from the Claude Code plugin chooser.
 
-See [`docs/installing-plugins.md`](docs/installing-plugins.md) for Codex
-install instructions and offline notes.
+See [`INSTALL.md`](INSTALL.md) for full install instructions for both Claude
+Code and Codex, or [`docs/installing-plugins.md`](docs/installing-plugins.md)
+for detailed options.
 
 ## Install (OpenAI Codex)
 
