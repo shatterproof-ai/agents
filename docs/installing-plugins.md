@@ -50,6 +50,13 @@ By default this:
    codex plugin marketplace add ${CODEX_HOME:-~/.codex}/marketplaces/shatterproof
    ```
 
+After registering the marketplace, enable the plugins you want:
+
+```bash
+codex plugin add shatter@shatterproof
+codex plugin add refute@shatterproof
+```
+
 Restart any running Codex session after installation. To install just one
 plugin, pass its name:
 
