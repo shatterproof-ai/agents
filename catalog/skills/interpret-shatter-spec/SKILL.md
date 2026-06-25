@@ -231,6 +231,118 @@ harness. If the database setup cannot be resolved, still emit valid Rust that
 exits early with the actionable error above — never defer the failure into the
 fuzz loop.
 
+## Auto-discovery of factory methods and trait implementors
+
+When a harness generates a **state constructor** (e.g. an `AppState` or any
+struct whose fields must be populated to drive the target), do not assume each
+field must be built from a default or hand-written stub. Real projects usually
+already ship test factories and concrete trait implementors that produce valid
+values; a generator that ignores them forces a human to rediscover them by hand.
+Scan the project source first and prefer what it already provides.
+
+The motivating case is pickpackit, whose `AppState` includes an
+`auth: AuthRuntime`, a `storage: StorageClient`, and an
+`assistant: Arc<dyn AssistantProvider>`. A human had to manually discover
+`AuthRuntime::dev_for_tests`, `StorageClient::for_tests`, and the concrete
+`DeterministicAssistant` implementor before the generator could compile. The
+rules below make that discovery automatic.
+
+### 1. Scan for factory methods on each field's type
+
+For each concrete (non-trait-object) field type, search the project source for
+associated functions whose names match these patterns:
+
+- `*_for_tests` (e.g. `dev_for_tests`, `for_tests`)
+- `*_for_testing`
+- `stub` (e.g. `Type::stub`)
+- `mock` (e.g. `Type::mock`)
+- `noop` (e.g. `Type::noop`)
+
+Match on the type's `impl` block: a method counts only if it is an associated
+function (or constructor) returning `Self` / the field's type. Include both
+zero-argument and argument-bearing factories.
+
+**Selection rule when several factories match the same type:**
+
+1. Prefer a **zero-argument** factory.
+2. Otherwise prefer the factory with the **fewest parameters**.
+3. Break ties **alphabetically by method name**.
+
+**Argument-bearing factories are still used** — do not skip a type just because
+its only factory takes arguments. Emit the call with a clearly marked
+placeholder for each argument so the human sees exactly what to fill in:
+
+```rust
+// AuthRuntime has only dev_for_tests(secret: impl Into<String>) -> Self
+auth: AuthRuntime::dev_for_tests("TODO: replace with test secret"),
+```
+
+For a zero-arg factory, emit the call directly:
+
+```rust
+// StorageClient::for_tests() -> Self  (zero args)
+storage: StorageClient::for_tests(),
+```
+
+### 2. Resolve `Arc<dyn Trait>` fields via concrete implementors
+
+A trait-object field such as `Arc<dyn AssistantProvider>` cannot be constructed
+without a concrete type. Search the project source for every concrete
+`impl Trait for T` and rank the candidate `T` types by how cheaply they can be
+constructed:
+
+1. **Rank 1** — struct with a zero-arg `T::new()` or `T::default()` /
+   `Default::default()` **and no external-resource fields** (no network clients,
+   file handles, DB pools, API keys, sockets, env-dependent config).
+2. **Rank 2** — struct with a zero-arg `T::new()` whose fields are in-memory /
+   non-IO (computed state, vectors, maps) but not trivially `Default`.
+3. **Rank 3** — struct that **requires constructor arguments** or external
+   resources (API key, remote endpoint, config object).
+
+Break ties **alphabetically by type name**. Select the lowest-rank (most
+constructible) candidate. Wrap it to match the field, e.g. `Arc::new(<T>::new())`
+or `Arc::new(<T>::default())`.
+
+In pickpackit, `AssistantProvider` has three implementors:
+
+- `DeterministicAssistant` — no constructor args → **rank 1, selected**
+- `OllamaAssistant` — requires external Ollama config → rank 3, not selected
+- `OpenAiAssistant` — requires an API key → rank 3, not selected
+
+So the field resolves to:
+
+```rust
+// DeterministicAssistant is the only rank-1 impl AssistantProvider
+assistant: Arc::new(DeterministicAssistant::new()),
+```
+
+Rank-3 implementors that need external resources must **never** be selected as
+the auto-generated default, even when they are the only implementors found —
+fall through to the TODO in step 3 instead.
+
+### 3. Emit an annotated TODO when nothing resolves
+
+If a field's type has no matching factory method, and (for a trait-object field)
+no constructible concrete implementor, do not invent a value or leave the field
+unset. Emit a placeholder with an explicit, greppable annotation:
+
+```rust
+// TODO(shatter): resolve <TypeName> — no factory method or trait implementor found
+```
+
+Use the field's declared type for `<TypeName>` (e.g. `Arc<dyn PaymentGateway>`),
+so a human can locate every unresolved field by searching for
+`TODO(shatter): resolve`.
+
+### 4. Regression requirement
+
+Auto-discovery augments harness generation; it must not break hand-authored
+generators. When a project already provides a working generator (e.g.
+`api/.shatter/generators/pickpackit.rs`), do not overwrite its hand-written
+constructions. Always emit valid, compilable Rust: when discovery is ambiguous
+or finds nothing, fall back to the annotated TODO above rather than failing
+generation.
+
 ## Out of scope
 
 - Reviewing an entire Shatter run directory.
