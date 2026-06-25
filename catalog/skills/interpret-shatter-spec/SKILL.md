@@ -96,6 +96,53 @@ not produce the full `Overall interpretation` / `Most important cases`
 `Recommended next step` structure — that belongs to `run-shatter`'s
 review output and `report-shatter-issues`' markdown report.
 
+## Crate-bridge harness route annotation
+
+When a spec was produced by a **crate-bridge** harness for a web-framework
+handler (e.g. an axum handler), the generated driver `main.rs` mounts the
+handler at a synthetic path such as `/test/{p0}/{p1}` rather than the
+handler's real application route. The synthetic path loses the real
+parameter names and bypasses per-route middleware, so a reader can be
+misled about which inputs the handler actually splits on.
+
+Whenever you generate or review a crate-bridge `main.rs` that contains a
+synthetic `.route("/test/...")` call, annotate it so the real route is not
+lost:
+
+1. **Look up the real route.** Search the target project's router wiring —
+   `build_router()` or the equivalent `Router::new()` / `.nest(...)` /
+   `.route(...)` composition — for the entry that maps to the handler under
+   test. Account for nested routers: a handler mounted via
+   `Router::new().nest("/api", api)` has its real path prefixed by the nest
+   path. Record the full path pattern, including its real parameter names.
+
+2. **Add a `Real route:` comment immediately adjacent to the `.route()`
+   call** (on the line directly above it), naming the resolved path. For the
+   `create_bundle_entry` handler this is:
+
+   ```rust
+   // Real route: /workspaces/{workspace_id}/bundles/{bundle_id}/entries
+   .route("/test/{p0}/{p1}", routing::any(/* handler */)) // TODO(shatter): replace synthetic path with real route above
+   ```
+
+3. **Add a `// TODO(shatter): replace synthetic path with real route above`
+   annotation** on the synthetic `.route("/test/...")` line itself or on the
+   line directly below it, so the mismatch is actionable.
+
+Ideal (do this when the router is statically analyzable):
+
+- Use the resolved real path pattern directly in the generated `.route()`
+  call instead of the synthetic `/test/{p0}/{p1}`.
+- Build the default seed URL from the real parameter names and plausible
+  values (e.g. `/workspaces/ws_1/bundles/b_1/entries`) rather than synthetic
+  `p0`/`p1` placeholders.
+
+Regression requirement: if no matching route can be found for the handler,
+still emit valid Rust. Keep the synthetic `.route("/test/...")` call, attach
+the `// TODO(shatter): replace synthetic path with real route above`
+annotation, and add a comment noting that no real route was resolved. Never
+fail harness generation over a missing route.
+
 ## Out of scope
 
 - Reviewing an entire Shatter run directory.
