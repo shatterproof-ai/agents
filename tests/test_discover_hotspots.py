@@ -148,6 +148,45 @@ class ProtoClusterTest(unittest.TestCase):
         self.assertEqual(handler_cluster["candidates"][0]["file"], "handlers/a.go")
 
 
+class SerializationGuardTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mod = load_module()
+
+    def test_detects_oncelock_mutex_guard(self) -> None:
+        guards = self.mod.detect_serialization_guards(
+            FIXTURES_DIR / "rust-serial-guard"
+        )
+        files = {g["file"] for g in guards}
+        self.assertIn("tests/sweeper.rs", files)
+
+    def test_guard_records_structural_type(self) -> None:
+        guards = self.mod.detect_serialization_guards(
+            FIXTURES_DIR / "rust-serial-guard"
+        )
+        g = next(g for g in guards if g["file"] == "tests/sweeper.rs")
+        self.assertEqual(g["guard_type"], "OnceLock<Mutex<()>>")
+
+    def test_clean_rust_file_is_not_flagged(self) -> None:
+        guards = self.mod.detect_serialization_guards(
+            FIXTURES_DIR / "rust-serial-guard"
+        )
+        files = {g["file"] for g in guards}
+        self.assertNotIn("src/lib.rs", files)
+
+    def test_rwlock_guard_is_out_of_scope(self) -> None:
+        guards = self.mod.detect_serialization_guards(
+            FIXTURES_DIR / "rust-serial-guard"
+        )
+        files = {g["file"] for g in guards}
+        self.assertNotIn("tests/rwlock.rs", files)
+
+    def test_path_qualified_types_are_matched(self) -> None:
+        match = self.mod._RUST_SERIAL_GUARD.search(
+            "static M: std::sync::OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();"
+        )
+        self.assertIsNotNone(match)
+
+
 class MainCLITest(unittest.TestCase):
     def copy_fixture(self, name: str) -> Path:
         tmpdir = Path(tempfile.mkdtemp(prefix="shatter-advise-"))
@@ -184,6 +223,40 @@ class MainCLITest(unittest.TestCase):
         self.assertTrue(data["artifact_mode"])
         artifact_backed = [c for c in data["candidates"] if c["artifact_backed"]]
         self.assertGreater(len(artifact_backed), 0)
+
+    def test_serialization_guard_in_discovery_and_stderr(self) -> None:
+        import subprocess
+        root = self.copy_fixture("rust-serial-guard")
+        output = root.parent / "discovery.json"
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT_PATH),
+             "--root", str(root),
+             "--output", str(output)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(output.read_text())
+        self.assertIn("serialization_guards", data)
+        files = {g["file"] for g in data["serialization_guards"]}
+        self.assertIn("tests/sweeper.rs", files)
+        self.assertNotIn("tests/rwlock.rs", files)
+        self.assertIn("OnceLock<Mutex<()>>", result.stderr)
+        self.assertIn("tests/sweeper.rs", result.stderr)
+
+    def test_guard_policy_block_recorded(self) -> None:
+        import subprocess
+        root = self.copy_fixture("rust-serial-guard")
+        output = root.parent / "discovery.json"
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT_PATH),
+             "--root", str(root),
+             "--output", str(output),
+             "--serialization-guard-policy", "block"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(output.read_text())
+        self.assertEqual(data["serialization_guard_policy"], "block")
 
     def test_exits_1_on_missing_root(self) -> None:
         import subprocess

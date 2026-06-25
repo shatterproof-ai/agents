@@ -61,8 +61,15 @@ Read `discovery.json`. Note:
 - `proto_clusters`: initial groupings by failure shape
 - `candidates`: individual hotspot files with signals and priority
 - `artifact_mode`: whether Shatter artifacts were loaded
+- `serialization_guards`: `.rs` files with a static `OnceLock<Mutex<()>>`
+  test-serialization guard (see "Serialization guard warnings" below)
+- `serialization_guard_policy`: `warn` (default) or `block`
 
-If `candidates` is empty, write a brief `report.md` stating no tractability hotspots were detected, populate `findings.json` with zero-value budget fields, print the console summary with all zeros, and stop.
+The discovery script also prints a warning to stderr for each serialization
+guard it finds. Surface those guards in the report even when `candidates` is
+empty.
+
+If `candidates` is empty, write a brief `report.md` stating no tractability hotspots were detected (still include the "Serialization Guard Warnings" section if any guards were detected), populate `findings.json` with zero-value budget fields, print the console summary with all zeros, and stop.
 
 ### 4. Select clusters and representative examples (Phase 1.5)
 
@@ -199,6 +206,17 @@ Skipped N low-priority hotspots.
 ## Justified-Skip Register
 
 (files/symbols recommended for exclusion, with rationale)
+
+## Serialization Guard Warnings
+
+(one entry per file in `serialization_guards`; omit the section if empty)
+
+- `<file>` — defines a static `OnceLock<Mutex<()>>` serialization guard.
+  Parallel harness execution would violate this invariant silently, producing
+  spurious failures or non-deterministic coverage. Run this target in
+  single-threaded execution mode (one harness iteration at a time). Policy:
+  `<warn|block>` (from `serialization_guard_policy`); `block` means parallel
+  execution must be refused for this target.
 
 ## Architectural Ceiling Estimate
 

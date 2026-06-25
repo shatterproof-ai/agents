@@ -52,6 +52,19 @@ _TS_SIDE_EFFECTS = re.compile(r'\b(console\.(log|error|warn)|logger\.|\.emit\(|\
 
 _GENERATED_FILENAME = re.compile(r'(\.gen\.|_generated\.|generated_)', re.IGNORECASE)
 
+# Rust serialization guard: a global `static OnceLock<Mutex<()>>` used to
+# serialize tests around shared mutable state (e.g. a function that drains a DB
+# table). Shatter's parallel harness execution would violate this invariant
+# silently, producing spurious failures or non-deterministic coverage. The
+# match is structural on the type signature — not name-based on functions like
+# `serial_lock` — and tolerates whitespace and path qualifiers
+# (`std::sync::OnceLock<tokio::sync::Mutex<()>>`). `OnceLock<RwLock<()>>` is
+# intentionally out of scope.
+_RUST_SERIAL_GUARD = re.compile(
+    r'static\s+\w+\s*:\s*(?:\w+::)*OnceLock\s*<\s*(?:\w+::)*Mutex\s*<\s*\(\s*\)\s*>\s*>'
+)
+_SERIAL_GUARD_TYPE = "OnceLock<Mutex<()>>"
+
 
 def _signals_for_go(path: Path, content: str) -> list[str]:
     signals = []
@@ -136,6 +149,33 @@ def discover_candidates(root: Path, languages: list[str]) -> list[dict]:
                 "priority": _priority(signals, artifact_backed=False),
             })
     return candidates
+
+
+def detect_serialization_guards(root: Path) -> list[dict]:
+    """Scan `.rs` files for a static OnceLock<Mutex<()>> serialization guard.
+
+    Such a guard serializes tests around shared mutable state; Shatter's
+    parallel harness execution would violate the invariant silently. The match
+    is structural on the type signature (see `_RUST_SERIAL_GUARD`), not on the
+    guard function's name. `OnceLock<RwLock<()>>` is intentionally out of scope.
+    """
+    guards: list[dict] = []
+    for path in sorted(root.rglob("*.rs")):
+        if not path.is_file():
+            continue
+        if any(part in _SKIP_DIRS for part in path.parts):
+            continue
+        try:
+            content = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if _RUST_SERIAL_GUARD.search(content):
+            guards.append({
+                "file": str(path.relative_to(root)),
+                "guard_type": _SERIAL_GUARD_TYPE,
+                "risk": "parallel_harness_serialization",
+            })
+    return guards
 
 
 def _priority(signals: list[str], artifact_backed: bool) -> str:
@@ -262,6 +302,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", required=True, help="Project root to analyze")
     parser.add_argument("--run-dir", help="Optional prior run-shatter output directory")
     parser.add_argument("--output", required=True, help="Path to write discovery.json")
+    parser.add_argument(
+        "--serialization-guard-policy",
+        choices=("warn", "block"),
+        default="warn",
+        help=(
+            "How to treat a detected static OnceLock<Mutex<()>> serialization "
+            "guard. 'warn' (default) emits a warning and suggests "
+            "single-threaded execution; 'block' records that parallel "
+            "execution must be refused for the affected target. Typically "
+            "sourced from .shatter/config.yaml."
+        ),
+    )
     args = parser.parse_args(argv)
 
     root = Path(args.root)
@@ -280,12 +332,35 @@ def main(argv: list[str] | None = None) -> int:
     candidates = merge_artifacts(candidates, artifacts, root=root)
     clusters = proto_cluster(candidates)
 
+    serialization_guards = detect_serialization_guards(root)
+    policy = args.serialization_guard_policy
+    for guard in serialization_guards:
+        guard["policy"] = policy
+        enforcement = (
+            "Config policy is 'block': parallel execution must be refused for "
+            "this target."
+            if policy == "block"
+            else "Warn-only: set the serialization_guard policy to 'block' to "
+            "enforce."
+        )
+        print(
+            f"warning: {guard['file']} defines a static {_SERIAL_GUARD_TYPE} "
+            "serialization guard. It serializes tests around shared mutable "
+            "state; Shatter's parallel harness execution would violate this "
+            "invariant silently, producing spurious failures or "
+            "non-deterministic coverage. Suggest single-threaded execution "
+            f"mode for this target. {enforcement}",
+            file=sys.stderr,
+        )
+
     discovery = {
         "root": str(root),
         "languages": languages,
         "artifact_mode": bool(artifacts),
         "candidates": candidates,
         "proto_clusters": clusters,
+        "serialization_guards": serialization_guards,
+        "serialization_guard_policy": policy,
     }
 
     output = Path(args.output)

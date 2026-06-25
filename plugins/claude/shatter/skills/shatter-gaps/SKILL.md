@@ -46,9 +46,15 @@ python3 <skill-dir>/../shatter-advise/scripts/discover_hotspots.py \
 
 ### 3. Read discovery output
 
-Read `discovery.json`. Note `languages`, `proto_clusters`, `candidates`, and `artifact_mode`.
+Read `discovery.json`. Note `languages`, `proto_clusters`, `candidates`, `artifact_mode`, `serialization_guards`, and `serialization_guard_policy`.
 
-If `candidates` is empty, write a brief `engine-gaps.md` stating no tractability hotspots were detected, populate `findings.json` with zero-value budget fields, print the console summary with all zeros, and stop.
+`serialization_guards` lists `.rs` files containing a static
+`OnceLock<Mutex<()>>` test-serialization guard. The discovery script also
+prints a warning to stderr for each one. Shatter's parallel harness execution
+would violate this guard's invariant silently; surface these in the report
+(see "Serialization guard warnings" below) even when `candidates` is empty.
+
+If `candidates` is empty, write a brief `engine-gaps.md` stating no tractability hotspots were detected (still include the "Serialization Guard Warnings" section if any guards were detected), populate `findings.json` with zero-value budget fields, print the console summary with all zeros, and stop.
 
 ### 4. Select clusters and representative examples (Phase 1.5)
 
@@ -148,6 +154,17 @@ Save to `$OUTPUT_DIR/engine-gaps.md`:
 ## Patterns with no open issue
 
 (ENGINE-GAP findings with no engine_issue_ref — candidates for filing)
+
+## Serialization Guard Warnings
+
+(one entry per file in `serialization_guards`; omit the section if empty)
+
+- `<file>` — defines a static `OnceLock<Mutex<()>>` serialization guard.
+  Parallel harness execution would violate this invariant silently. Suggest
+  single-threaded execution mode for this target. Policy: `<warn|block>` (from
+  `serialization_guard_policy`); `block` means parallel execution must be
+  refused. Whether the engine should auto-detect such guards and serialize the
+  affected target itself is a candidate ENGINE-GAP.
 ```
 
 ### 8. Write findings.json
