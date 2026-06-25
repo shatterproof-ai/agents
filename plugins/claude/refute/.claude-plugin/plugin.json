@@ -4,5 +4,5 @@
   },
   "description": "Install Refute, diagnose its setup, and drive symbol-aware refactors.",
   "name": "refute",
-  "version": "0.1.1"
+  "version": "0.1.2"
 }

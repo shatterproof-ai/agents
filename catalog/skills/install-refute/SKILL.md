@@ -106,8 +106,9 @@ working for the project's languages.
 
 ## Out of scope
 
-- Pinning to a specific release (covered by `pin-refute`, deferred).
-- Performing any refactoring (covered by `refute-rename`, deferred).
+- Pinning to a specific release (covered by `pin-refute`).
+- Performing any refactoring (renames via `refute-rename`; extract-function,
+  move-to-file, and inline-variable via `refute-transform`).
 - Installing language toolchains that the project already requires (Go
   itself, Node.js, rustup) — assumed present.
 
