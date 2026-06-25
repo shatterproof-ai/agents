@@ -143,6 +143,94 @@ the `// TODO(shatter): replace synthetic path with real route above`
 annotation, and add a comment noting that no real route was resolved. Never
 fail harness generation over a missing route.
 
+## sqlx DATABASE_URL pre-flight check
+
+When a harness drives a Rust **sqlx** target, the generated driver must
+connect to a live PostgreSQL database before it can exercise the target. The
+canonical sqlx integration-test idiom appears identically across such projects
+and in Shatter's own generated generators:
+
+```rust
+let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+let pool = PgPoolOptions::new().max_connections(5).connect(&url).await.expect("connect");
+MIGRATIONS.get_or_init(|| async { sqlx::migrate!("./migrations").run(&pool).await }).await;
+```
+
+Generated harnesses tend to degrade this into a hardcoded fallback such as
+
+```rust
+const DEFAULT_DATABASE_URL: &str = "postgres://user:pass@localhost:55432/db";
+```
+
+combined with `connect_lazy_with`. `connect_lazy_with` does not open a
+connection eagerly: it defers the first connection attempt — and therefore the
+failure when no database is listening — into the first fuzz iteration. The
+reader then sees a connection error reported as if it were target behavior, and
+the run wastes a full iteration discovering an environment problem.
+
+Whenever you generate a sqlx harness `main.rs` (or the generator that produces
+it), enforce a fail-fast database pre-flight **before** the fuzz loop is
+entered:
+
+1. **Require `DATABASE_URL` explicitly.** Do not silently fall back to a
+   hardcoded localhost URL. Read the variable and, when it is unset or empty,
+   emit an actionable error naming the problem, the fix, and the variable to
+   set, then exit before the first iteration:
+
+   ```rust
+   let url = match std::env::var("DATABASE_URL") {
+       Ok(u) if !u.is_empty() => u,
+       _ => {
+           eprintln!(
+               "Error: DATABASE_URL is not set. Set it to a running Postgres \
+                instance (e.g. run 'make api-test-integration') and re-run."
+           );
+           std::process::exit(1);
+       }
+   };
+   ```
+
+   Adapt the parenthetical command to the target project's documented
+   integration-test entrypoint when one is discoverable (e.g. a `make` target,
+   `task` command, or `docker compose` invocation); otherwise keep the generic
+   `make api-test-integration` example.
+
+2. **Replace `connect_lazy_with` with an eager connect (or a pre-flight
+   connectivity check).** Use `PgPoolOptions::new().connect(&url).await` so a
+   missing or unreachable database fails immediately with a clear message,
+   rather than `connect_lazy_with`, which surfaces inside the fuzz loop:
+
+   ```rust
+   let pool = match PgPoolOptions::new().max_connections(5).connect(&url).await {
+       Ok(p) => p,
+       Err(e) => {
+           eprintln!(
+               "Error: could not connect to Postgres at DATABASE_URL: {e}. \
+                Ensure a database is running (e.g. 'make api-test-integration')."
+           );
+           std::process::exit(1);
+       }
+   };
+   ```
+
+   Run `sqlx::migrate!()` against the eagerly connected pool before the first
+   iteration so migration failures are also reported up front.
+
+Ideal (managed Postgres mode — future enhancement): detect the
+`PgPoolOptions + connect(DATABASE_URL) + sqlx::migrate!()` idiom and offer an
+opt-in mode (CLI flag or config key, or auto-detection) that launches a
+temporary Postgres container before the harness run — Docker primary,
+Podman-compatible if feasible — exports `DATABASE_URL` into the harness process
+environment, runs `sqlx::migrate!()` automatically before the first iteration,
+and tears the container down after the run. Until that mode exists, the
+fail-fast pre-flight above is the required behavior.
+
+Regression requirement: never embed a hardcoded `DEFAULT_DATABASE_URL` fallback
+and never use `connect_lazy_with` for the primary pool in a generated sqlx
+harness. If the database setup cannot be resolved, still emit valid Rust that
+exits early with the actionable error above — never defer the failure into the
+fuzz loop.
+
 ## Out of scope
 
 - Reviewing an entire Shatter run directory.
