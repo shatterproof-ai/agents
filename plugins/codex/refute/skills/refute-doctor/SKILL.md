@@ -55,7 +55,12 @@ not use.
 For each language present in the project, report:
 
 - backend status (ready / missing / out of date / extension missing)
-- which refactoring operations are currently usable
+- which refactoring operations are currently usable, named individually so a
+  caller knows whether a specific transform will run. The operations the
+  backends expose are `rename`, `extract-function`, `move` (move-to-file), and
+  `inline-variable`, plus reference search. Coverage varies by backend — list
+  exactly the operations the doctor reports for each one rather than assuming
+  the full set.
 - the exact remediation command, taken from the doctor output, when the
   backend is not ready
 
@@ -64,12 +69,19 @@ Use this shape:
 ```
 ## Refute Health
 
-- Go (gopls): READY at v0.x.y — rename, reference search usable
+- Go (gopls): READY at v0.x.y — rename, extract-function, move,
+  inline-variable, reference search usable
 - Rust (rust-analyzer): MISSING
   Fix: rustup component add rust-analyzer
 - TypeScript: BACKEND OUT OF DATE
   Fix: npm install -g typescript-language-server@latest
 ```
+
+When a backend is `READY` but the doctor lists only a subset of operations
+(for example a backend that supports `rename` and `extract-function` but not
+`move`), report the usable subset and call out the missing operations
+explicitly, so a caller such as `refute-transform` knows up front which
+structural refactors it can and cannot run.
 
 ### 4. Summary
 
@@ -79,5 +91,6 @@ project uses" or "Refute is blocked on N backends — see above".
 ## Out of scope
 
 - Installing backends (covered by `install-refute`).
-- Performing refactorings (covered by `refute-rename`, deferred).
-- Pinning versions (covered by `pin-refute`, deferred).
+- Performing refactorings (renames via `refute-rename`; extract-function,
+  move-to-file, and inline-variable via `refute-transform`).
+- Pinning versions (covered by `pin-refute`).
