@@ -99,7 +99,7 @@ def _signals_for_typescript(path: Path, content: str) -> list[str]:
 # Candidate discovery
 # ---------------------------------------------------------------------------
 
-_SKIP_DIRS = {".git", "node_modules", "vendor", "target", "dist", "build", "__pycache__"}
+_SKIP_DIRS = {".git", ".shatter", "node_modules", "vendor", "target", "dist", "build", "__pycache__"}
 
 def discover_candidates(root: Path, languages: list[str]) -> list[dict]:
     candidates = []
