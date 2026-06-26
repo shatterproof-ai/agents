@@ -149,6 +149,12 @@ e.g. `.shatter/recipes/sweeper.run_once/s3-delete-fails.json`. The
 `<target-id>` groups every recipe for one target; one target may have
 several named recipes — typically one per branch family worth forcing.
 
+**Deriving `<target-id>`.** The target-id is the file stem (filename
+without extension) joined to the function name with a dot:
+`api/src/sweeper.rs::run_once` → `sweeper.run_once`. Shatter reports
+each target's id in its discovery output; copy the reported id verbatim
+when creating the recipe directory.
+
 ---
 
 ## 2. Stub authoring and registration
@@ -247,6 +253,13 @@ scenarios:
     source: shatter/scenarios/rust/rows_pending_delete.rs
     factory: rows_pending_delete   # async fn(pool) seeds sweep-eligible rows
 ```
+
+**Scenario factory signature.** Unlike stub factories (which are
+zero-argument constructors), a scenario factory is called with the
+**live resource instance** as its first (and only) argument. Shatter
+constructs the resource first, then passes it to the scenario factory,
+which seeds it deterministically and returns it. In Rust:
+`async fn rows_pending_delete(pool: PgPool) -> PgPool`.
 
 A bare `"live"` (no scenario name) uses the parameter's **default live
 setup**. Either form requires a registered live setup/scenario; a named
