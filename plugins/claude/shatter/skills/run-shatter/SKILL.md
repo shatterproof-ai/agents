@@ -66,6 +66,40 @@ metadata including exit status, and the overall `summary.json`. If the
 target's wrapper produces spec JSON, reports, or other exports, keep those
 files alongside the captured console output.
 
+### Recipe discovery and runs
+
+A target may carry optional **recipes** — declarative documents that bind
+each parameter of one function to its own provider (a live/seeded
+resource, a registered stub, a pinned value, or default synthesis) so a
+single run can combine, e.g., a real seeded database with an erroring
+storage stub. Recipes are authored and validated by the
+`compose-shatter-recipe` skill; this skill only **discovers and runs**
+them.
+
+For each discovered target with id `<target-id>`, enumerate its recipes:
+
+```
+.shatter/recipes/<target-id>/*.json
+```
+
+- A target with **no** matching directory, or no `*.json` files, simply
+  has no recipes. Run it exactly as today (single bundled `State()`
+  synthesis). Recipe discovery never fails on an absent recipe directory —
+  the no-recipe path is unchanged and fully backward compatible.
+- When recipes exist, run the target **once per recipe** in addition to
+  (not instead of) the default run, so each forced branch family is
+  explored. Label each run by recipe name (e.g.
+  `sweeper.run_once / s3-delete-fails`) in the artifacts and review.
+- A recipe is **validated before its run** (unknown parameter key,
+  unregistered stub, stub/port-type mismatch, concrete-typed parameter,
+  missing live scenario, unknown `schemaVersion`). A malformed recipe
+  fails its own run with that precise error; report it as a recipe
+  validation failure and **keep running** the other recipes and targets.
+  Do not treat a recipe validation error as a target-program behavior.
+
+See the `compose-shatter-recipe` skill for the recipe schema, stub/scenario
+registration, and the full validation rules.
+
 ### 2. Review
 
 Once the run completes, write a review of the captured artifacts with
