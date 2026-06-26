@@ -169,7 +169,12 @@ def detect_serialization_guards(root: Path) -> list[dict]:
             content = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        if _RUST_SERIAL_GUARD.search(content):
+        # Match line-by-line, skipping `//` comment lines, so a commented-out
+        # declaration does not produce a spurious guard entry.
+        if any(
+            not line.lstrip().startswith("//") and _RUST_SERIAL_GUARD.search(line)
+            for line in content.splitlines()
+        ):
             guards.append({
                 "file": str(path.relative_to(root)),
                 "guard_type": _SERIAL_GUARD_TYPE,
