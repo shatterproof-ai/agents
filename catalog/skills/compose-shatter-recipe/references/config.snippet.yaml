@@ -1,0 +1,15 @@
+# Append to .shatter/config.yaml — stub registry + live scenario for the
+# pickpackit sweeper s3-delete-fails recipe.
+stubs:
+  - name: storage_delete_errors   # the name a recipe references
+    implements: Storage           # the port trait it satisfies
+    lang: rust
+    source: shatter/stubs/rust/storage_delete_errors.rs
+    factory: StorageDeleteErrors::new   # zero-arg constructor
+
+scenarios:
+  - name: rows_pending_delete
+    parameter_type: PgPool
+    lang: rust
+    source: shatter/scenarios/rust/rows_pending_delete.rs
+    factory: rows_pending_delete   # async fn(pool) seeds sweep-eligible rows

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "target": "api/src/sweeper.rs::run_once",
+  "bindings": {
+    "pool":    { "live": "rows_pending_delete" },
+    "config":  "default",
+    "storage": { "stub": "storage_delete_errors" }
+  }
+}
