@@ -64,12 +64,15 @@ Read `discovery.json`. Note:
 - `serialization_guards`: `.rs` files with a static `OnceLock<Mutex<()>>`
   test-serialization guard (see "Serialization guard warnings" below)
 - `serialization_guard_policy`: `warn` (default) or `block`
+- `inline_sql_handlers`: Rust HTTP handlers that embed a `sqlx` query inline
+  instead of delegating to a repository function (see "Inline-SQL handler
+  opportunities" below)
 
 The discovery script also prints a warning to stderr for each serialization
-guard it finds. Surface those guards in the report even when `candidates` is
-empty.
+guard and each inline-SQL handler it finds. Surface both in the report even
+when `candidates` is empty.
 
-If `candidates` is empty, write a brief `report.md` stating no tractability hotspots were detected (still include the "Serialization Guard Warnings" section if any guards were detected), populate `findings.json` with zero-value budget fields, print the console summary with all zeros, and stop.
+If `candidates` is empty, write a brief `report.md` stating no tractability hotspots were detected (still include the "Serialization Guard Warnings" and "Inline-SQL Handler Opportunities" sections if any were detected), populate `findings.json` with zero-value budget fields, print the console summary with all zeros, and stop.
 
 ### 4. Select clusters and representative examples (Phase 1.5)
 
@@ -217,6 +220,19 @@ Skipped N low-priority hotspots.
   single-threaded execution mode (one harness iteration at a time). Policy:
   `<warn|block>` (from `serialization_guard_policy`); `block` means parallel
   execution must be refused for this target.
+
+## Inline-SQL Handler Opportunities
+
+(one entry per finding in `inline_sql_handlers`; omit the section if empty)
+
+- `<file>:<handler>` — embeds SQL inline (`<sql_calls>`) rather than delegating
+  to a repository/DAO function. This fat entry point mixes auth/validation with
+  DB access, so Shatter must drive the full HTTP stack to reach branches that
+  are really about DB result shapes (empty row, FK violation, stale data), and
+  generators must reconstruct the entire FK chain to exercise one branch.
+  Extract the query into a repository function (`shatter_friendliness: low`,
+  reason `inline_sql`); a DAO function needs only the minimal fixture for its
+  query and exposes those branches directly.
 
 ## Architectural Ceiling Estimate
 
