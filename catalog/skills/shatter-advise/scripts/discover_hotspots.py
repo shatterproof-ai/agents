@@ -66,6 +66,194 @@ _RUST_SERIAL_GUARD = re.compile(
 _SERIAL_GUARD_TYPE = "OnceLock<Mutex<()>>"
 
 
+# Rust inline-SQL handler: an HTTP entry-point function that embeds a `sqlx`
+# query macro directly in its body instead of delegating to a repository/DAO
+# function. Such handlers are fat entry points that mix auth/validation with DB
+# access — Shatter must drive the whole HTTP stack to reach any branch that is
+# really about DB result shapes (empty row, FK violation), and generators must
+# reconstruct the full FK chain just to exercise one branch. A repository
+# function testing the query in isolation exposes those branches directly, so we
+# flag inline-SQL handlers as a shatter-friendliness opportunity.
+#
+# The distinction from a repository function is structural, not name-based: a
+# repo fn takes a bare executor (`&PgPool`, `&mut PgConnection`, `impl
+# Executor`) and returns domain types; a handler takes framework extractors
+# (axum `State`/`Path`/`Json`/..., actix `web::Data`/`web::Json`/...) or returns
+# an HTTP response type (`impl IntoResponse`, `HttpResponse`, `StatusCode`), or
+# carries a rocket route attribute. Only `sqlx::query`, `sqlx::query_as`, and
+# `sqlx::query_scalar` (qualified or bare-macro form) count as inline SQL.
+_RUST_SQLX_CALL = re.compile(
+    r'\bsqlx\s*::\s*(query_as|query_scalar|query)\b'
+    r'|\b(query_as|query_scalar|query)\s*!'
+)
+_RUST_HANDLER_EXTRACTOR = re.compile(
+    r'\b(State|Path|Query|Json|Form|Extension|TypedHeader|Multipart|ConnectInfo|'
+    r'WebSocketUpgrade|RawQuery|OriginalUri)\s*<'
+    r'|\bweb\s*::\s*(Path|Query|Json|Form|Data)\b'
+    r'|\bHttpRequest\b'
+)
+_RUST_HANDLER_RETURN = re.compile(
+    r'->[^{]*\b(impl\s+IntoResponse|IntoResponse|impl\s+Responder|Responder|'
+    r'HttpResponse|Response|StatusCode|Html|Redirect|Json)\b'
+)
+_RUST_ROCKET_ROUTE = re.compile(
+    r'#\[\s*(?:\w+\s*::\s*)*(get|post|put|delete|patch|head|options)\s*\('
+)
+_RUST_FN_DEF = re.compile(r'\bfn\s+([A-Za-z_]\w*)\s*[(<]')
+# A Rust char literal: a unicode escape `'\u{1F600}'`, a byte escape `'\x41'`,
+# a simple escape `'\n'`, or a single non-quote char. Matching the full escape
+# (rather than `\\.`) keeps the brace of a `\u{...}` escape from being counted
+# as code during brace matching. A `'` that matches none of these is a lifetime.
+_CHAR_LIT = re.compile(
+    r"'(?:\\u\{[0-9a-fA-F_]{1,6}\}|\\x[0-9a-fA-F]{2}|\\.|[^'\\])'"
+)
+
+
+def _strip_rust_literals_and_comments(src: str) -> str:
+    """Blank out string/char literals and comments, preserving code and layout.
+
+    Structural analysis (brace matching, signature detection) runs on the result
+    so that a `{` inside a SQL string literal or a `sqlx::query` inside a comment
+    cannot skew function-body attribution. Blanked spans become spaces (newlines
+    preserved); identifiers such as `sqlx::query` are code and survive intact.
+    """
+    out: list[str] = []
+    i, n = 0, len(src)
+    while i < n:
+        c = src[i]
+        if c == '/' and i + 1 < n and src[i + 1] == '/':
+            while i < n and src[i] != '\n':
+                out.append(' ')
+                i += 1
+            continue
+        if c == '/' and i + 1 < n and src[i + 1] == '*':
+            depth = 1
+            out.append('  ')
+            i += 2
+            while i < n and depth > 0:
+                if src[i] == '/' and i + 1 < n and src[i + 1] == '*':
+                    depth += 1
+                    out.append('  ')
+                    i += 2
+                elif src[i] == '*' and i + 1 < n and src[i + 1] == '/':
+                    depth -= 1
+                    out.append('  ')
+                    i += 2
+                else:
+                    out.append('\n' if src[i] == '\n' else ' ')
+                    i += 1
+            continue
+        if c == 'r' and i + 1 < n and src[i + 1] in '#"':
+            j = i + 1
+            hashes = 0
+            while j < n and src[j] == '#':
+                hashes += 1
+                j += 1
+            if j < n and src[j] == '"':
+                closing = '"' + '#' * hashes
+                end = src.find(closing, j + 1)
+                end = n if end == -1 else end + len(closing)
+                for k in range(i, min(end, n)):
+                    out.append('\n' if src[k] == '\n' else ' ')
+                i = end
+                continue
+        if c == '"':
+            out.append(' ')
+            i += 1
+            while i < n:
+                if src[i] == '\\' and i + 1 < n:
+                    out.append('  ')
+                    i += 2
+                elif src[i] == '"':
+                    out.append(' ')
+                    i += 1
+                    break
+                else:
+                    out.append('\n' if src[i] == '\n' else ' ')
+                    i += 1
+            continue
+        if c == "'":
+            m = _CHAR_LIT.match(src, i)
+            if m:
+                out.append(' ' * (m.end() - i))
+                i = m.end()
+                continue
+            # Not a char literal (e.g. a lifetime `'a`); leave the quote as code.
+            out.append(c)
+            i += 1
+            continue
+        out.append(c)
+        i += 1
+    return ''.join(out)
+
+
+def _matching_brace(s: str, open_idx: int) -> int:
+    """Return the index of the `}` matching the `{` at `open_idx`.
+
+    Assumes `s` has had literals/comments blanked, so braces are balanced. Falls
+    back to end-of-string if no match is found (malformed input).
+    """
+    depth = 0
+    for i in range(open_idx, len(s)):
+        if s[i] == '{':
+            depth += 1
+        elif s[i] == '}':
+            depth -= 1
+            if depth == 0:
+                return i
+    return len(s) - 1
+
+
+def _iter_rust_functions(stripped: str):
+    """Yield (name, preamble, signature, body) for each `fn` in blanked source.
+
+    `preamble` is the ~200 chars preceding the fn (for attribute-based handler
+    detection); `signature` spans the fn keyword to the body's opening brace;
+    `body` is the brace-delimited block.
+    """
+    for m in _RUST_FN_DEF.finditer(stripped):
+        open_idx = stripped.find('{', m.end() - 1)
+        if open_idx == -1:
+            continue
+        # Bodyless declarations (trait method decls, `extern` fns) have no body;
+        # their signature ends in `;` before any `{`. Skip them — otherwise the
+        # forward `{` search would borrow an unrelated later function's body and
+        # attribute it to this declaration's name. A function signature never
+        # contains a `;` before its opening brace, so `;` before `{` is decisive.
+        semi_idx = stripped.find(';', m.end() - 1)
+        if semi_idx != -1 and semi_idx < open_idx:
+            continue
+        close_idx = _matching_brace(stripped, open_idx)
+        yield (
+            m.group(1),
+            stripped[max(0, m.start() - 200):m.start()],
+            stripped[m.start():open_idx],
+            stripped[open_idx:close_idx + 1],
+        )
+
+
+def _is_rust_handler(preamble: str, signature: str) -> bool:
+    return bool(
+        _RUST_HANDLER_EXTRACTOR.search(signature)
+        or _RUST_HANDLER_RETURN.search(signature)
+        or _RUST_ROCKET_ROUTE.search(preamble)
+    )
+
+
+def _inline_sql_calls(body: str) -> list[str]:
+    """Return sorted, de-duplicated `sqlx::`-qualified names of query calls.
+
+    Both the qualified form (`sqlx::query_as::<...>`) and the bare-macro form
+    (`query!`, imported via `use sqlx::query`) normalize to the same canonical
+    `sqlx::<name>` string.
+    """
+    calls: set[str] = set()
+    for m in _RUST_SQLX_CALL.finditer(body):
+        name = m.group(1) or m.group(2)
+        calls.add(f"sqlx::{name}")
+    return sorted(calls)
+
+
 def _signals_for_go(path: Path, content: str) -> list[str]:
     signals = []
     if _GENERATED_FILENAME.search(path.name) or _GO_GENERATED.search(content):
@@ -181,6 +369,48 @@ def detect_serialization_guards(root: Path) -> list[dict]:
                 "risk": "parallel_harness_serialization",
             })
     return guards
+
+
+def detect_inline_sql_handlers(root: Path) -> list[dict]:
+    """Scan `.rs` files for HTTP handlers that embed a sqlx query inline.
+
+    A handler (entry point identified by framework extractors, an HTTP response
+    return type, or a rocket route attribute — see `_is_rust_handler`) whose
+    body directly invokes `sqlx::query`, `sqlx::query_as`, or `sqlx::query_scalar`
+    is flagged `shatter_friendliness: low` with reason `inline_sql`. Repository
+    functions (which take a bare executor and are the recommended target) are not
+    handlers, so they are not flagged. See the module comment on `_RUST_SQLX_CALL`.
+    """
+    findings: list[dict] = []
+    for path in sorted(root.rglob("*.rs")):
+        if not path.is_file():
+            continue
+        if any(part in _SKIP_DIRS for part in path.parts):
+            continue
+        try:
+            content = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        stripped = _strip_rust_literals_and_comments(content)
+        for name, preamble, signature, body in _iter_rust_functions(stripped):
+            if not _is_rust_handler(preamble, signature):
+                continue
+            sql_calls = _inline_sql_calls(body)
+            if not sql_calls:
+                continue
+            findings.append({
+                "file": str(path.relative_to(root)),
+                "handler": name,
+                "shatter_friendliness": "low",
+                "reason": "inline_sql",
+                "sql_calls": sql_calls,
+                "suggestion": (
+                    "extract DB access into a repository function so Shatter can "
+                    "exercise DB-result-shape branches without driving the full "
+                    "HTTP stack"
+                ),
+            })
+    return findings
 
 
 def _priority(signals: list[str], artifact_backed: bool) -> str:
@@ -358,6 +588,17 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
+    inline_sql_handlers = detect_inline_sql_handlers(root)
+    for finding in inline_sql_handlers:
+        print(
+            f"warning: {finding['file']}:{finding['handler']} embeds SQL inline "
+            f"({', '.join(finding['sql_calls'])}). This fat entry point mixes "
+            "auth/validation with DB access, so Shatter must drive the full HTTP "
+            "stack to reach branches about DB result shapes. Suggest extracting "
+            "DB access into a repository function.",
+            file=sys.stderr,
+        )
+
     discovery = {
         "root": str(root),
         "languages": languages,
@@ -366,6 +607,7 @@ def main(argv: list[str] | None = None) -> int:
         "proto_clusters": clusters,
         "serialization_guards": serialization_guards,
         "serialization_guard_policy": policy,
+        "inline_sql_handlers": inline_sql_handlers,
     }
 
     output = Path(args.output)
